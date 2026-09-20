@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { Calendar, Plus, Trash2, TrendingUp, Clock, CheckCircle, AlertCircle } from 'lucide-react';
+import { SignedIn, SignedOut, SignInButton, UserButton } from '@clerk/clerk-react';
 
 const ProjectDashboard = () => {
   const [projects, setProjects] = useState([
@@ -135,6 +136,21 @@ const ProjectDashboard = () => {
   }));
 
   return (
+    <>
+      <SignedOut>
+        <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center p-8">
+          <div className="bg-white p-10 rounded-xl shadow-md border border-slate-200 text-center max-w-sm">
+            <h1 className="text-2xl font-bold text-slate-800 mb-2">Project Dashboard</h1>
+            <p className="text-slate-600 mb-6">Please sign in to view your projects</p>
+            <SignInButton mode="modal">
+              <button className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors shadow-lg">
+                Sign In
+              </button>
+            </SignInButton>
+          </div>
+        </div>
+      </SignedOut>
+      <SignedIn>
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-8">
       <div className="max-w-7xl mx-auto">
         <div className="flex justify-between items-center mb-8">
@@ -142,13 +158,16 @@ const ProjectDashboard = () => {
             <h1 className="text-4xl font-bold text-slate-800 mb-2">Project Dashboard</h1>
             <p className="text-slate-600">Track and manage your projects in real-time</p>
           </div>
-          <button
-            onClick={() => setShowAddForm(!showAddForm)}
-            className="flex items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors shadow-lg"
-          >
-            <Plus size={20} />
-            Add Project
-          </button>
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => setShowAddForm(!showAddForm)}
+              className="flex items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors shadow-lg"
+            >
+              <Plus size={20} />
+              Add Project
+            </button>
+            <UserButton />
+          </div>
         </div>
 
         {/* Metrics Overview */}
@@ -378,6 +397,8 @@ const ProjectDashboard = () => {
         </div>
       </div>
     </div>
+      </SignedIn>
+    </>
   );
 };
 
