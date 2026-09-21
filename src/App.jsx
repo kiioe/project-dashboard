@@ -1,55 +1,44 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { Calendar, Plus, Trash2, TrendingUp, Clock, CheckCircle, AlertCircle } from 'lucide-react';
-import { SignedIn, SignedOut, SignInButton, UserButton } from '@clerk/clerk-react';
+import { SignedIn, SignedOut, SignInButton, UserButton, useUser, useSession } from '@clerk/clerk-react';
+import { createClient } from '@supabase/supabase-js';
+
+function useSupabaseClient() {
+  const { session } = useSession();
+  return createClient(
+    import.meta.env.VITE_SUPABASE_URL,
+    import.meta.env.VITE_SUPABASE_ANON_KEY,
+    { accessToken: async () => session?.getToken() ?? null }
+  );
+}
 
 const ProjectDashboard = () => {
-  const [projects, setProjects] = useState([
-    {
-      id: 1,
-      name: 'Website Redesign',
-      status: 'In Progress',
-      progress: 65,
-      startDate: '2026-01-01',
-      endDate: '2026-02-15',
-      owner: 'Sarah Chen',
-      budget: 50000,
-      spent: 32500
-    },
-    {
-      id: 2,
-      name: 'Mobile App Development',
-      status: 'In Progress',
-      progress: 40,
-      startDate: '2025-12-15',
-      endDate: '2026-03-30',
-      owner: 'Mike Johnson',
-      budget: 120000,
-      spent: 48000
-    },
-    {
-      id: 3,
-      name: 'Marketing Campaign',
-      status: 'Completed',
-      progress: 100,
-      startDate: '2025-11-01',
-      endDate: '2025-12-31',
-      owner: 'Emily Davis',
-      budget: 35000,
-      spent: 34200
-    },
-    {
-      id: 4,
-      name: 'Infrastructure Upgrade',
-      status: 'Planning',
-      progress: 15,
-      startDate: '2026-01-15',
-      endDate: '2026-04-30',
-      owner: 'David Kumar',
-      budget: 85000,
-      spent: 12750
+  const { user } = useUser();
+  const supabase = useSupabaseClient();
+  const [loading, setLoading] = useState(true);
+  const [projects, setProjects] = useState([]);
+
+  useEffect(() => {
+    if (user) fetchProjects();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
+
+  const fetchProjects = async () => {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from('projects')
+      .select('*')
+      .order('id', { ascending: true });
+    if (!error) {
+      setProjects(data.map(p => ({
+        ...p,
+        startDate: p.start_date,
+        endDate: p.end_date
+      })));
     }
-  ]);
+    setLoading(false);
+  };
 
   const [showAddForm, setShowAddForm] = useState(false);
   const [newProject, setNewProject] = useState({
@@ -69,32 +58,46 @@ const ProjectDashboard = () => {
     const inProgress = projects.filter(p => p.status === 'In Progress').length;
     const totalBudget = projects.reduce((sum, p) => sum + p.budget, 0);
     const totalSpent = projects.reduce((sum, p) => sum + p.spent, 0);
-    const avgProgress = projects.reduce((sum, p) => sum + p.progress, 0) / total;
+    const avgProgress = total === 0 ? 0 : projects.reduce((sum, p) => sum + p.progress, 0) / total;
 
     return { total, completed, inProgress, totalBudget, totalSpent, avgProgress };
   };
 
   const metrics = calculateMetrics();
 
-  const addProject = () => {
+  const addProject = async () => {
     if (newProject.name && newProject.startDate && newProject.endDate) {
-      setProjects([...projects, { ...newProject, id: Date.now() }]);
-      setNewProject({
-        name: '',
-        status: 'Planning',
-        progress: 0,
-        startDate: '',
-        endDate: '',
-        owner: '',
-        budget: 0,
-        spent: 0
+      const { error } = await supabase.from('projects').insert({
+        user_id: user.id,
+        name: newProject.name,
+        status: newProject.status,
+        progress: newProject.progress,
+        start_date: newProject.startDate,
+        end_date: newProject.endDate,
+        owner: newProject.owner,
+        budget: newProject.budget,
+        spent: newProject.spent
       });
-      setShowAddForm(false);
+      if (!error) {
+        fetchProjects();
+        setNewProject({
+          name: '',
+          status: 'Planning',
+          progress: 0,
+          startDate: '',
+          endDate: '',
+          owner: '',
+          budget: 0,
+          spent: 0
+        });
+        setShowAddForm(false);
+      }
     }
   };
 
-  const deleteProject = (id) => {
-    setProjects(projects.filter(p => p.id !== id));
+  const deleteProject = async (id) => {
+    const { error } = await supabase.from('projects').delete().eq('id', id);
+    if (!error) fetchProjects();
   };
 
   const getStatusColor = (status) => {
@@ -116,16 +119,15 @@ const ProjectDashboard = () => {
   const getGanttPosition = (startDate, endDate) => {
     const projectStart = new Date(startDate);
     const projectEnd = new Date(endDate);
-    const today = new Date();
-    
+
     const allDates = projects.flatMap(p => [new Date(p.startDate), new Date(p.endDate)]);
     const minDate = new Date(Math.min(...allDates));
     const maxDate = new Date(Math.max(...allDates));
-    
+
     const totalDays = (maxDate - minDate) / (1000 * 60 * 60 * 24);
     const startOffset = ((projectStart - minDate) / (1000 * 60 * 60 * 24)) / totalDays * 100;
     const duration = ((projectEnd - projectStart) / (1000 * 60 * 60 * 24)) / totalDays * 100;
-    
+
     return { left: `${startOffset}%`, width: `${duration}%` };
   };
 
@@ -294,7 +296,11 @@ const ProjectDashboard = () => {
           </h2>
           <div className="overflow-x-auto">
             <div className="min-w-full">
-              {projects.map((project) => {
+              {loading && <p className="text-slate-500 text-sm">Loading projects...</p>}
+              {!loading && projects.length === 0 && (
+                <p className="text-slate-500 text-sm">No projects yet — add your first one above.</p>
+              )}
+              {!loading && projects.map((project) => {
                 const position = getGanttPosition(project.startDate, project.endDate);
                 return (
                   <div key={project.id} className="mb-4">
