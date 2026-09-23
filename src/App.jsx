@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { Calendar, Plus, Trash2, TrendingUp, Clock, CheckCircle, AlertCircle } from 'lucide-react';
-import { SignedIn, SignedOut, SignInButton, UserButton, useUser, useSession } from '@clerk/clerk-react';
+import { SignedIn, SignedOut, SignInButton, UserButton, useUser, useSession, useOrganization, CreateOrganization, OrganizationSwitcher } from '@clerk/clerk-react';
 import { createClient } from '@supabase/supabase-js';
 
 function useSupabaseClient() {
@@ -15,20 +15,23 @@ function useSupabaseClient() {
 
 const ProjectDashboard = () => {
   const { user } = useUser();
+  const { organization, membership } = useOrganization();
+  const isAdmin = membership?.role === 'org:admin';
   const supabase = useSupabaseClient();
   const [loading, setLoading] = useState(true);
   const [projects, setProjects] = useState([]);
 
   useEffect(() => {
-    if (user) fetchProjects();
+    if (organization) fetchProjects();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
+  }, [organization]);
 
   const fetchProjects = async () => {
     setLoading(true);
     const { data, error } = await supabase
       .from('projects')
       .select('*')
+      .eq('org_id', organization.id)
       .order('id', { ascending: true });
     if (!error) {
       setProjects(data.map(p => ({
@@ -68,7 +71,7 @@ const ProjectDashboard = () => {
   const addProject = async () => {
     if (newProject.name && newProject.startDate && newProject.endDate) {
       const { error } = await supabase.from('projects').insert({
-        user_id: user.id,
+        org_id: organization.id,
         name: newProject.name,
         status: newProject.status,
         progress: newProject.progress,
@@ -153,6 +156,15 @@ const ProjectDashboard = () => {
         </div>
       </SignedOut>
       <SignedIn>
+      {!organization ? (
+        <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center p-8">
+          <div className="bg-white p-10 rounded-xl shadow-md border border-slate-200 text-center">
+            <h1 className="text-2xl font-bold text-slate-800 mb-2">Create Your Team</h1>
+            <p className="text-slate-600 mb-6">Set up an organization to start adding projects</p>
+            <CreateOrganization />
+          </div>
+        </div>
+      ) : (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-8">
       <div className="max-w-7xl mx-auto">
         <div className="flex justify-between items-center mb-8">
@@ -161,13 +173,16 @@ const ProjectDashboard = () => {
             <p className="text-slate-600">Track and manage your projects in real-time</p>
           </div>
           <div className="flex items-center gap-4">
-            <button
-              onClick={() => setShowAddForm(!showAddForm)}
-              className="flex items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors shadow-lg"
-            >
-              <Plus size={20} />
-              Add Project
-            </button>
+            <OrganizationSwitcher />
+            {isAdmin && (
+              <button
+                onClick={() => setShowAddForm(!showAddForm)}
+                className="flex items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors shadow-lg"
+              >
+                <Plus size={20} />
+                Add Project
+              </button>
+            )}
             <UserButton />
           </div>
         </div>
@@ -208,7 +223,7 @@ const ProjectDashboard = () => {
         </div>
 
         {/* Add Project Form */}
-        {showAddForm && (
+        {showAddForm && isAdmin && (
           <div className="bg-white p-6 rounded-xl shadow-md border border-slate-200 mb-8">
             <h2 className="text-xl font-bold text-slate-800 mb-4">Add New Project</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -360,7 +375,7 @@ const ProjectDashboard = () => {
                   <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Status</th>
                   <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Progress</th>
                   <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Budget</th>
-                  <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Actions</th>
+                  {isAdmin && <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Actions</th>}
                 </tr>
               </thead>
               <tbody>
@@ -387,14 +402,16 @@ const ProjectDashboard = () => {
                     <td className="py-3 px-4 text-sm text-slate-600">
                       ${project.spent.toLocaleString()} / ${project.budget.toLocaleString()}
                     </td>
-                    <td className="py-3 px-4">
-                      <button
-                        onClick={() => deleteProject(project.id)}
-                        className="text-red-600 hover:text-red-800 transition-colors"
-                      >
-                        <Trash2 size={18} />
-                      </button>
-                    </td>
+                    {isAdmin && (
+                      <td className="py-3 px-4">
+                        <button
+                          onClick={() => deleteProject(project.id)}
+                          className="text-red-600 hover:text-red-800 transition-colors"
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -403,6 +420,7 @@ const ProjectDashboard = () => {
         </div>
       </div>
     </div>
+      )}
       </SignedIn>
     </>
   );
