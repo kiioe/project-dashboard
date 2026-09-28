@@ -13,6 +13,24 @@ function useSupabaseClient() {
   );
 }
 
+const todayStr = () => {
+  const d = new Date();
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+  return d.toISOString().slice(0, 10);
+};
+
+const emptyProject = {
+  name: '',
+  status: 'Planning',
+  progress: 0,
+  startDate: '',
+  endDate: '',
+  owner: '',
+  budget: 0,
+  spent: 0,
+  hourlyRate: 0
+};
+
 const ProjectDashboard = () => {
   const { user } = useUser();
   const { organization, membership } = useOrganization();
@@ -20,11 +38,22 @@ const ProjectDashboard = () => {
   const supabase = useSupabaseClient();
   const [loading, setLoading] = useState(true);
   const [projects, setProjects] = useState([]);
+  const [timeEntries, setTimeEntries] = useState([]);
+  const [timeError, setTimeError] = useState('');
+  const [newEntry, setNewEntry] = useState({
+    projectId: '',
+    date: todayStr(),
+    hours: '',
+    note: ''
+  });
 
   useEffect(() => {
-    if (organization) fetchProjects();
+    if (organization) {
+      fetchProjects();
+      if (isAdmin) fetchTimeEntries();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [organization]);
+  }, [organization, isAdmin]);
 
   const fetchProjects = async () => {
     setLoading(true);
@@ -43,17 +72,19 @@ const ProjectDashboard = () => {
     setLoading(false);
   };
 
+  const fetchTimeEntries = async () => {
+    const { data, error } = await supabase
+      .from('time_entries')
+      .select('*')
+      .eq('org_id', organization.id)
+      .order('entry_date', { ascending: false })
+      .order('id', { ascending: false })
+      .limit(50);
+    if (!error) setTimeEntries(data);
+  };
+
   const [showAddForm, setShowAddForm] = useState(false);
-  const [newProject, setNewProject] = useState({
-    name: '',
-    status: 'Planning',
-    progress: 0,
-    startDate: '',
-    endDate: '',
-    owner: '',
-    budget: 0,
-    spent: 0
-  });
+  const [newProject, setNewProject] = useState(emptyProject);
 
   const calculateMetrics = () => {
     const total = projects.length;
@@ -79,20 +110,12 @@ const ProjectDashboard = () => {
         end_date: newProject.endDate,
         owner: newProject.owner,
         budget: newProject.budget,
-        spent: newProject.spent
+        spent: newProject.spent,
+        hourly_rate: newProject.hourlyRate
       });
       if (!error) {
         fetchProjects();
-        setNewProject({
-          name: '',
-          status: 'Planning',
-          progress: 0,
-          startDate: '',
-          endDate: '',
-          owner: '',
-          budget: 0,
-          spent: 0
-        });
+        setNewProject(emptyProject);
         setShowAddForm(false);
       }
     }
@@ -102,6 +125,36 @@ const ProjectDashboard = () => {
     const { error } = await supabase.from('projects').delete().eq('id', id);
     if (!error) fetchProjects();
   };
+
+  const addTimeEntry = async () => {
+    const hours = Number(newEntry.hours);
+    if (!newEntry.projectId || !newEntry.date || !(hours > 0) || hours > 24) {
+      setTimeError('Choose a project, a date, and hours between 0 and 24.');
+      return;
+    }
+    const { error } = await supabase.from('time_entries').insert({
+      org_id: organization.id,
+      project_id: Number(newEntry.projectId),
+      user_id: user.id,
+      entry_date: newEntry.date,
+      hours,
+      note: newEntry.note
+    });
+    if (error) {
+      setTimeError('Could not log time. Please try again.');
+      return;
+    }
+    setTimeError('');
+    setNewEntry({ projectId: newEntry.projectId, date: todayStr(), hours: '', note: '' });
+    fetchTimeEntries();
+  };
+
+  const deleteTimeEntry = async (id) => {
+    const { error } = await supabase.from('time_entries').delete().eq('id', id);
+    if (!error) fetchTimeEntries();
+  };
+
+  const projectName = (id) => projects.find(p => p.id === id)?.name || 'Unknown project';
 
   const getStatusColor = (status) => {
     switch(status) {
@@ -139,6 +192,8 @@ const ProjectDashboard = () => {
     Budget: p.budget,
     Spent: p.spent
   }));
+
+  const inputClass = "px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500";
 
   return (
     <>
@@ -196,7 +251,7 @@ const ProjectDashboard = () => {
             </div>
             <div className="text-3xl font-bold text-slate-800">{metrics.total}</div>
           </div>
-          
+
           <div className="bg-white p-6 rounded-xl shadow-md border border-slate-200">
             <div className="flex items-center justify-between mb-2">
               <div className="text-slate-600 text-sm font-medium">In Progress</div>
@@ -204,7 +259,7 @@ const ProjectDashboard = () => {
             </div>
             <div className="text-3xl font-bold text-slate-800">{metrics.inProgress}</div>
           </div>
-          
+
           <div className="bg-white p-6 rounded-xl shadow-md border border-slate-200">
             <div className="flex items-center justify-between mb-2">
               <div className="text-slate-600 text-sm font-medium">Completed</div>
@@ -212,7 +267,7 @@ const ProjectDashboard = () => {
             </div>
             <div className="text-3xl font-bold text-slate-800">{metrics.completed}</div>
           </div>
-          
+
           <div className="bg-white p-6 rounded-xl shadow-md border border-slate-200">
             <div className="flex items-center justify-between mb-2">
               <div className="text-slate-600 text-sm font-medium">Avg Progress</div>
@@ -232,12 +287,12 @@ const ProjectDashboard = () => {
                 placeholder="Project Name"
                 value={newProject.name}
                 onChange={(e) => setNewProject({...newProject, name: e.target.value})}
-                className="px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className={inputClass}
               />
               <select
                 value={newProject.status}
                 onChange={(e) => setNewProject({...newProject, status: e.target.value})}
-                className="px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className={inputClass}
               >
                 <option>Planning</option>
                 <option>In Progress</option>
@@ -248,42 +303,51 @@ const ProjectDashboard = () => {
                 placeholder="Start Date"
                 value={newProject.startDate}
                 onChange={(e) => setNewProject({...newProject, startDate: e.target.value})}
-                className="px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className={inputClass}
               />
               <input
                 type="date"
                 placeholder="End Date"
                 value={newProject.endDate}
                 onChange={(e) => setNewProject({...newProject, endDate: e.target.value})}
-                className="px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className={inputClass}
               />
               <input
                 type="text"
                 placeholder="Project Owner"
                 value={newProject.owner}
                 onChange={(e) => setNewProject({...newProject, owner: e.target.value})}
-                className="px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className={inputClass}
               />
               <input
                 type="number"
                 placeholder="Budget"
                 value={newProject.budget || ''}
                 onChange={(e) => setNewProject({...newProject, budget: Number(e.target.value)})}
-                className="px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className={inputClass}
               />
               <input
                 type="number"
                 placeholder="Progress (0-100)"
                 value={newProject.progress || ''}
                 onChange={(e) => setNewProject({...newProject, progress: Math.min(100, Number(e.target.value))})}
-                className="px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className={inputClass}
               />
               <input
                 type="number"
                 placeholder="Amount Spent"
                 value={newProject.spent || ''}
                 onChange={(e) => setNewProject({...newProject, spent: Number(e.target.value)})}
-                className="px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className={inputClass}
+              />
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="Hourly Rate (for time tracking)"
+                value={newProject.hourlyRate || ''}
+                onChange={(e) => setNewProject({...newProject, hourlyRate: Number(e.target.value)})}
+                className={inputClass}
               />
             </div>
             <div className="flex gap-4 mt-4">
@@ -335,7 +399,7 @@ const ProjectDashboard = () => {
                     <div className="flex items-center ml-48 text-xs text-slate-500">
                       {project.startDate} → {project.endDate}
                       <span className="ml-4 text-slate-600">
-                        {getDaysRemaining(project.endDate) > 0 
+                        {getDaysRemaining(project.endDate) > 0
                           ? `${getDaysRemaining(project.endDate)} days remaining`
                           : 'Overdue'}
                       </span>
@@ -362,6 +426,106 @@ const ProjectDashboard = () => {
             </BarChart>
           </ResponsiveContainer>
         </div>
+
+        {/* Time Tracking (admins only) */}
+        {isAdmin && (
+          <div className="bg-white p-6 rounded-xl shadow-md border border-slate-200 mb-8">
+            <h2 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2">
+              <Clock size={24} />
+              Time Tracking
+            </h2>
+
+            {projects.length === 0 ? (
+              <p className="text-slate-500 text-sm">Add a project first, then you can log time against it.</p>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+                <select
+                  value={newEntry.projectId}
+                  onChange={(e) => setNewEntry({...newEntry, projectId: e.target.value})}
+                  className={inputClass}
+                >
+                  <option value="">Select project</option>
+                  {projects.map(p => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+                <input
+                  type="date"
+                  value={newEntry.date}
+                  onChange={(e) => setNewEntry({...newEntry, date: e.target.value})}
+                  className={inputClass}
+                />
+                <input
+                  type="number"
+                  min="0"
+                  max="24"
+                  step="0.25"
+                  placeholder="Hours"
+                  value={newEntry.hours}
+                  onChange={(e) => setNewEntry({...newEntry, hours: e.target.value})}
+                  className={inputClass}
+                />
+                <input
+                  type="text"
+                  placeholder="Note (optional)"
+                  value={newEntry.note}
+                  onChange={(e) => setNewEntry({...newEntry, note: e.target.value})}
+                  className={inputClass}
+                />
+                <button
+                  onClick={addTimeEntry}
+                  className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  Log Time
+                </button>
+              </div>
+            )}
+
+            {timeError && <p className="text-red-600 text-sm mt-3">{timeError}</p>}
+
+            <div className="overflow-x-auto mt-6">
+              {timeEntries.length === 0 ? (
+                <p className="text-slate-500 text-sm">No time logged yet.</p>
+              ) : (
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-slate-200">
+                      <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Date</th>
+                      <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Project</th>
+                      <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Hours</th>
+                      <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Note</th>
+                      <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">By</th>
+                      <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {timeEntries.map((entry) => (
+                      <tr key={entry.id} className="border-b border-slate-100 hover:bg-slate-50">
+                        <td className="py-3 px-4 text-sm text-slate-600">{entry.entry_date}</td>
+                        <td className="py-3 px-4 text-sm text-slate-800 font-medium">{projectName(entry.project_id)}</td>
+                        <td className="py-3 px-4 text-sm text-slate-600">{Number(entry.hours)}h</td>
+                        <td className="py-3 px-4 text-sm text-slate-600">{entry.note}</td>
+                        <td className="py-3 px-4 text-sm text-slate-600">
+                          {entry.user_id === user.id ? 'You' : 'Teammate'}
+                        </td>
+                        <td className="py-3 px-4">
+                          {entry.user_id === user.id && (
+                            <button
+                              onClick={() => deleteTimeEntry(entry.id)}
+                              className="text-red-600 hover:text-red-800 transition-colors"
+                            >
+                              <Trash2 size={18} />
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Project List */}
         <div className="bg-white p-6 rounded-xl shadow-md border border-slate-200">
