@@ -5,6 +5,8 @@ import { SignedIn, SignedOut, SignInButton, UserButton, useUser, useSession, use
 import { createClient } from '@supabase/supabase-js';
 import { MONEY_TYPING, parseMoney, CURRENCIES, DEFAULT_CURRENCY, formatMoney, sumMoney, HOURS_TYPING, parseHours } from './money';
 import CostsPanel, { itemTotals } from './CostsPanel';
+import TasksPanel, { taskProgress } from './TasksPanel';
+import InvoiceDialog from './InvoiceDialog';
 
 function useSupabaseClient() {
   const { session } = useSession();
@@ -25,7 +27,6 @@ const todayStr = () => {
 const emptyProject = {
   name: '',
   status: 'Planning',
-  progress: '0',
   startDate: '',
   endDate: '',
   owner: '',
@@ -55,11 +56,15 @@ const ProjectDashboard = () => {
   const [costItems, setCostItems] = useState([]);
   const [unbilledTime, setUnbilledTime] = useState([]); // time entries not yet billed (admins only)
   const [openCostsFor, setOpenCostsFor] = useState(null);
+  const [tasks, setTasks] = useState([]);
+  const [openTasksFor, setOpenTasksFor] = useState(null);
+  const [invoiceFor, setInvoiceFor] = useState(null); // project id with the invoice dialog open
 
   useEffect(() => {
     if (organization) {
       fetchProjects();
       fetchCosts();
+      fetchTasks();
       if (isAdmin) fetchTimeEntries();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -101,6 +106,23 @@ const ProjectDashboard = () => {
       })));
     }
     if (isAdmin) fetchUnbilledTime();
+  };
+
+  // Tasks for every project in the organisation. A project's progress comes only from its tasks.
+  const fetchTasks = async () => {
+    const { data, error } = await supabase
+      .from('project_tasks')
+      .select('*')
+      .eq('org_id', organization.id)
+      .order('id', { ascending: true });
+    if (!error) setTasks(data);
+  };
+  const tasksFor = (projectId) => tasks.filter(t => t.project_id === projectId);
+  // Shown progress uses the task list straight away; the database stores the same figure on the project.
+  const progressFor = (project) => taskProgress(tasksFor(project.id));
+  const refreshTasks = async () => {
+    await fetchTasks();
+    fetchProjects();
   };
 
   // Every unbilled time entry (not limited like the Time Tracking list), so billing totals are complete.
@@ -158,7 +180,7 @@ const ProjectDashboard = () => {
     const total = projects.length;
     const completed = projects.filter(p => p.status === 'Completed').length;
     const inProgress = projects.filter(p => p.status === 'In Progress').length;
-    const avgProgress = total === 0 ? 0 : projects.reduce((sum, p) => sum + p.progress, 0) / total;
+    const avgProgress = total === 0 ? 0 : projects.reduce((sum, p) => sum + progressFor(p), 0) / total;
 
     return { total, completed, inProgress, avgProgress };
   };
@@ -186,7 +208,6 @@ const ProjectDashboard = () => {
     setNewProject({
       name: project.name,
       status: project.status,
-      progress: String(project.progress ?? 0),
       startDate: project.startDate || '',
       endDate: project.endDate || '',
       owner: project.owner || '',
@@ -228,16 +249,9 @@ const ProjectDashboard = () => {
       setProjectError('Hourly Rate must be 0 or more, with up to 2 decimal places.');
       return;
     }
-    // Progress: a whole number from 0 to 100; blank counts as 0.
-    const progress = newProject.progress === '' ? 0 : Number(newProject.progress);
-    if (!Number.isInteger(progress) || progress < 0 || progress > 100) {
-      setProjectError('Progress must be a whole number from 0 to 100.');
-      return;
-    }
     const details = {
       name: newProject.name.trim(),
       status: newProject.status,
-      progress,
       start_date: newProject.startDate,
       end_date: newProject.endDate,
       owner: newProject.owner,
@@ -270,6 +284,9 @@ const ProjectDashboard = () => {
     if (openCostsFor === id) setOpenCostsFor(null);
     fetchProjects();
     fetchCosts();
+    fetchTasks();
+    if (invoiceFor === id) setInvoiceFor(null);
+    if (openTasksFor === id) setOpenTasksFor(null);
   };
 
   const addTimeEntry = async () => {
@@ -536,25 +553,9 @@ const ProjectDashboard = () => {
                 }}
                 className={inputClass}
               />
-              <label className="flex items-center gap-2">
-                <span className="text-sm text-slate-600 whitespace-nowrap">Progress %</span>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  aria-label="Progress (0 to 100)"
-                  placeholder="0 to 100"
-                  value={newProject.progress}
-                  onChange={(e) => {
-                    // Whole numbers 0 to 100 only; a leading zero is dropped (so "05" becomes "5").
-                    const v = e.target.value;
-                    if (v === '') return setNewProject({...newProject, progress: ''});
-                    if (/^\d{1,3}$/.test(v) && Number(v) <= 100) {
-                      setNewProject({...newProject, progress: String(Number(v))});
-                    }
-                  }}
-                  className={`${inputClass} flex-1 min-w-0`}
-                />
-              </label>
+              <p className="text-sm text-slate-500 self-center">
+                Progress comes from the project’s tasks{editingId === null ? ' (add them after saving, using Tasks in Project Details)' : ''}.
+              </p>
               <input
                 type="text"
                 inputMode="decimal"
@@ -622,7 +623,7 @@ const ProjectDashboard = () => {
                           className="absolute h-full bg-gradient-to-r from-blue-500 to-blue-600 rounded-lg flex items-center justify-center text-white text-xs font-medium shadow-md"
                           style={position}
                         >
-                          {project.progress}%
+                          {progressFor(project)}%
                         </div>
                       </div>
                     </div>
@@ -863,7 +864,7 @@ const ProjectDashboard = () => {
                   <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Status</th>
                   <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Progress</th>
                   <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Spent / Budget</th>
-                  <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Costs</th>
+                  <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Details</th>
                   {isAdmin && <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Actions</th>}
                 </tr>
               </thead>
@@ -883,23 +884,34 @@ const ProjectDashboard = () => {
                         <div className="flex-1 bg-slate-200 rounded-full h-2">
                           <div
                             className="bg-blue-600 h-2 rounded-full"
-                            style={{ width: `${project.progress}%` }}
+                            style={{ width: `${progressFor(project)}%` }}
                           />
                         </div>
-                        <span className="text-sm text-slate-600 w-12">{project.progress}%</span>
+                        <span className="text-sm text-slate-600 w-12">{progressFor(project)}%</span>
                       </div>
                     </td>
                     <td className="py-3 px-4 text-sm text-slate-600">
                       {formatMoney(spentFor(project), project.currency)} / {formatMoney(project.budget, project.currency)}
                     </td>
                     <td className="py-3 px-4">
-                      <button
-                        onClick={() => setOpenCostsFor(openCostsFor === project.id ? null : project.id)}
-                        aria-expanded={openCostsFor === project.id}
-                        className="text-sm text-blue-700 hover:text-blue-900 whitespace-nowrap"
-                      >
-                        {openCostsFor === project.id ? 'Hide costs' : `Costs (${itemsFor(project.id).length})`}
-                      </button>
+                      <div className="flex flex-col items-start gap-1">
+                        <button
+                          onClick={() => setOpenTasksFor(openTasksFor === project.id ? null : project.id)}
+                          aria-expanded={openTasksFor === project.id}
+                          className="text-sm text-blue-700 hover:text-blue-900 whitespace-nowrap"
+                        >
+                          {openTasksFor === project.id
+                            ? 'Hide tasks'
+                            : `Tasks (${tasksFor(project.id).filter(t => t.done).length}/${tasksFor(project.id).length})`}
+                        </button>
+                        <button
+                          onClick={() => setOpenCostsFor(openCostsFor === project.id ? null : project.id)}
+                          aria-expanded={openCostsFor === project.id}
+                          className="text-sm text-blue-700 hover:text-blue-900 whitespace-nowrap"
+                        >
+                          {openCostsFor === project.id ? 'Hide costs' : `Costs (${itemsFor(project.id).length})`}
+                        </button>
+                      </div>
                     </td>
                     {isAdmin && (
                       <td className="py-3 px-4">
@@ -907,8 +919,11 @@ const ProjectDashboard = () => {
                           <div className="text-sm min-w-[12rem]" role="alert">
                             <p className="text-slate-700 mb-1">
                               Delete <strong>{project.name}</strong>
-                              {itemsFor(project.id).length > 0 || categories.some(c => c.project_id === project.id)
-                                ? ' and all its costs' : ''}? This can’t be undone.
+                              {(() => {
+                                const hasCosts = itemsFor(project.id).length > 0 || categories.some(c => c.project_id === project.id);
+                                const hasTasks = tasksFor(project.id).length > 0;
+                                return hasCosts && hasTasks ? ' and all its tasks and costs' : hasCosts ? ' and all its costs' : hasTasks ? ' and all its tasks' : '';
+                              })()}? This can’t be undone.
                             </p>
                             <div className="flex items-center gap-3">
                               <button
@@ -949,6 +964,21 @@ const ProjectDashboard = () => {
                       </td>
                     )}
                   </tr>
+                  {openTasksFor === project.id && (
+                    <tr className="border-b border-slate-100">
+                      <td colSpan={isAdmin ? 7 : 6} className="p-4">
+                        <h3 className="text-sm font-semibold text-slate-700 mb-2">Tasks: {project.name}</h3>
+                        <TasksPanel
+                          project={project}
+                          tasks={tasksFor(project.id)}
+                          isAdmin={isAdmin}
+                          supabase={supabase}
+                          orgId={organization.id}
+                          onChanged={refreshTasks}
+                        />
+                      </td>
+                    </tr>
+                  )}
                   {openCostsFor === project.id && (
                     <tr className="border-b border-slate-100">
                       <td colSpan={isAdmin ? 7 : 6} className="p-4">
@@ -962,6 +992,7 @@ const ProjectDashboard = () => {
                           onChanged={refreshCostsAndTime}
                           unbilledTime={unbilledTime.filter(t => t.project_id === project.id)}
                           onBillTime={billLoggedTime}
+                          onCreateInvoice={() => setInvoiceFor(project.id)}
                         />
                       </td>
                     </tr>
@@ -973,6 +1004,16 @@ const ProjectDashboard = () => {
           </div>
         </div>
       </div>
+      {invoiceFor !== null && isAdmin && projects.some(p => p.id === invoiceFor) && (
+        <InvoiceDialog
+          project={projects.find(p => p.id === invoiceFor)}
+          categories={categories.filter(c => c.project_id === invoiceFor)}
+          items={itemsFor(invoiceFor)}
+          supabase={supabase}
+          orgId={organization.id}
+          onClose={() => setInvoiceFor(null)}
+        />
+      )}
     </div>
       )}
       </SignedIn>
