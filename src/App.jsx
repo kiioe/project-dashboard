@@ -3,7 +3,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 import { Calendar, Plus, Trash2, Pencil, TrendingUp, Clock, CheckCircle, AlertCircle } from 'lucide-react';
 import { SignedIn, SignedOut, SignInButton, UserButton, useUser, useSession, useOrganization, CreateOrganization, OrganizationSwitcher } from '@clerk/clerk-react';
 import { createClient } from '@supabase/supabase-js';
-import { MONEY_TYPING, parseMoney, CURRENCIES, DEFAULT_CURRENCY, formatMoney, sumMoney } from './money';
+import { MONEY_TYPING, parseMoney, CURRENCIES, DEFAULT_CURRENCY, formatMoney, sumMoney, HOURS_TYPING, parseHours } from './money';
 import CostsPanel, { itemTotals } from './CostsPanel';
 
 function useSupabaseClient() {
@@ -273,9 +273,9 @@ const ProjectDashboard = () => {
   };
 
   const addTimeEntry = async () => {
-    const hours = Number(newEntry.hours);
-    if (!newEntry.projectId || !newEntry.date || !(hours > 0) || hours > 24) {
-      setTimeError('Choose a project, a date, and hours between 0 and 24.');
+    const hours = parseHours(newEntry.hours);
+    if (!newEntry.projectId || !newEntry.date || hours === null) {
+      setTimeError('Choose a project, a date, and hours between 0 and 24 (up to 2 decimal places).');
       return;
     }
     const { error } = await supabase.from('time_entries').insert({
@@ -299,9 +299,47 @@ const ProjectDashboard = () => {
   const deleteTimeEntry = async (id) => {
     const { error } = await supabase.from('time_entries').delete().eq('id', id);
     if (!error) {
+      if (editingEntry?.id === id) setEditingEntry(null);
       fetchTimeEntries();
       fetchUnbilledTime();
     }
+  };
+
+  // Editing logged time: only your own entries that haven't been billed yet.
+  const [editingEntry, setEditingEntry] = useState(null); // { id, projectId, date, hours, note }
+  const [entryError, setEntryError] = useState('');
+
+  const startEditingEntry = (entry) => {
+    setEntryError('');
+    setEditingEntry({
+      id: entry.id,
+      projectId: String(entry.project_id),
+      date: entry.entry_date,
+      hours: String(Number(entry.hours)),
+      note: entry.note || ''
+    });
+  };
+
+  const saveTimeEntry = async () => {
+    const hours = parseHours(editingEntry.hours);
+    if (!editingEntry.projectId || !editingEntry.date || hours === null) {
+      setEntryError('Choose a project, a date, and hours between 0 and 24 (up to 2 decimal places).');
+      return;
+    }
+    const { error } = await supabase.from('time_entries').update({
+      project_id: Number(editingEntry.projectId),
+      entry_date: editingEntry.date,
+      hours,
+      note: editingEntry.note
+    }).eq('id', editingEntry.id);
+    if (error) {
+      setEntryError('Could not save the changes. Please try again.');
+      return;
+    }
+    setEditingEntry(null);
+    setEntryError('');
+    fetchTimeEntries();
+    fetchUnbilledTime();
   };
 
   const projectName = (id) => projects.find(p => p.id === id)?.name || 'Unknown project';
@@ -670,13 +708,13 @@ const ProjectDashboard = () => {
                   className={inputClass}
                 />
                 <input
-                  type="number"
-                  min="0"
-                  max="24"
-                  step="0.25"
+                  type="text"
+                  inputMode="decimal"
                   placeholder="Hours"
                   value={newEntry.hours}
-                  onChange={(e) => setNewEntry({...newEntry, hours: e.target.value})}
+                  onChange={(e) => {
+                    if (HOURS_TYPING.test(e.target.value)) setNewEntry({...newEntry, hours: e.target.value});
+                  }}
                   className={inputClass}
                 />
                 <input
@@ -713,7 +751,60 @@ const ProjectDashboard = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {timeEntries.map((entry) => (
+                    {timeEntries.map((entry) => editingEntry?.id === entry.id ? (
+                      <tr key={entry.id} className="border-b border-slate-100 bg-blue-50/40">
+                        <td colSpan={6} className="py-3 px-4">
+                          <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
+                            <input
+                              type="date"
+                              aria-label="Entry date"
+                              value={editingEntry.date}
+                              onChange={(e) => setEditingEntry({ ...editingEntry, date: e.target.value })}
+                              className={inputClass}
+                            />
+                            <select
+                              aria-label="Entry project"
+                              value={editingEntry.projectId}
+                              onChange={(e) => setEditingEntry({ ...editingEntry, projectId: e.target.value })}
+                              className={inputClass}
+                            >
+                              {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                            </select>
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              aria-label="Entry hours"
+                              placeholder="Hours"
+                              value={editingEntry.hours}
+                              onChange={(e) => {
+                                if (HOURS_TYPING.test(e.target.value)) setEditingEntry({ ...editingEntry, hours: e.target.value });
+                              }}
+                              className={inputClass}
+                            />
+                            <input
+                              type="text"
+                              aria-label="Entry note"
+                              placeholder="Note (optional)"
+                              value={editingEntry.note}
+                              onChange={(e) => setEditingEntry({ ...editingEntry, note: e.target.value })}
+                              className={inputClass}
+                            />
+                            <div className="flex gap-2">
+                              <button onClick={saveTimeEntry} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700">
+                                Save
+                              </button>
+                              <button onClick={() => { setEditingEntry(null); setEntryError(''); }} className="bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm hover:bg-slate-300">
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                          {String(editingEntry.projectId) !== String(entry.project_id) && (
+                            <p className="text-slate-500 text-xs mt-2">Moving these hours to another project uses that project’s hourly rate.</p>
+                          )}
+                          {entryError && <p className="text-red-600 text-sm mt-2" role="alert">{entryError}</p>}
+                        </td>
+                      </tr>
+                    ) : (
                       <tr key={entry.id} className="border-b border-slate-100 hover:bg-slate-50">
                         <td className="py-3 px-4 text-sm text-slate-600">{entry.entry_date}</td>
                         <td className="py-3 px-4 text-sm text-slate-800 font-medium">{projectName(entry.project_id)}</td>
@@ -726,18 +817,29 @@ const ProjectDashboard = () => {
                           {entry.cost_item_id ? (
                             <span
                               className="px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800"
-                              title="These hours are on a cost item. Delete that cost item to unbill them."
+                              title="These hours are on a cost item. Edit that item in the project's Costs, or delete it to unbill and edit these hours."
                             >
                               Billed
                             </span>
                           ) : entry.user_id === user.id && (
-                            <button
-                              onClick={() => deleteTimeEntry(entry.id)}
-                              aria-label="Delete time entry"
-                              className="text-red-600 hover:text-red-800 transition-colors"
-                            >
-                              <Trash2 size={18} />
-                            </button>
+                            <div className="flex items-center gap-3">
+                              <button
+                                onClick={() => startEditingEntry(entry)}
+                                aria-label={`Edit time entry ${entry.entry_date}, ${Number(entry.hours)} h`}
+                                title="Edit time entry"
+                                className="text-blue-600 hover:text-blue-800 transition-colors"
+                              >
+                                <Pencil size={18} />
+                              </button>
+                              <button
+                                onClick={() => deleteTimeEntry(entry.id)}
+                                aria-label="Delete time entry"
+                                title="Delete time entry"
+                                className="text-red-600 hover:text-red-800 transition-colors"
+                              >
+                                <Trash2 size={18} />
+                              </button>
+                            </div>
                           )}
                         </td>
                       </tr>
