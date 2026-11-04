@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, Pencil, Clock } from 'lucide-react';
 import { MONEY_TYPING, parseMoney, CURRENCIES, formatMoney, sumMoney } from './money';
 
 export const ITEM_STATUSES = ['Quoted', 'Booked', 'Invoiced', 'Paid'];
@@ -7,6 +7,9 @@ export const ITEM_STATUSES = ['Quoted', 'Booked', 'Invoiced', 'Paid'];
 export const COMMITTED_STATUSES = ['Booked', 'Invoiced', 'Paid'];
 
 const SUGGESTED_CATEGORIES = ['Venue', 'Catering', 'Flowers', 'Entertainment', 'Staffing', 'Décor', 'Photography', 'Transport', 'Stationery', 'Other'];
+// Logged time goes to a Staffing-type category by default; one called "Staffing" is created if there isn't one.
+const TIME_CATEGORY_PATTERN = /staff|labou?r|time/i;
+const NEW_TIME_CATEGORY = 'Staffing';
 
 const STATUS_STYLES = {
   Quoted: 'bg-slate-100 text-slate-700',
@@ -16,6 +19,8 @@ const STATUS_STYLES = {
 };
 
 const inputClass = 'px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
+const primaryButton = 'bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700 disabled:opacity-60';
+const secondaryButton = 'bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm hover:bg-slate-300';
 
 // Totals for a set of items: committed (booked or later) and paid.
 export const itemTotals = (items) => ({
@@ -24,6 +29,58 @@ export const itemTotals = (items) => ({
 });
 
 const emptyItem = { description: '', supplier: '', quantity: '1', unitCost: '', status: 'Quoted', dueDate: '' };
+const itemToDraft = (item) => ({
+  description: item.description,
+  supplier: item.supplier || '',
+  quantity: String(item.quantity),
+  unitCost: String(item.unit_cost),
+  status: item.status,
+  dueDate: item.due_date || ''
+});
+
+// Checks a draft item; returns [error, row-to-save].
+const validateItem = (d) => {
+  const description = d.description.trim();
+  const quantity = parseMoney(d.quantity);
+  const unitCost = parseMoney(d.unitCost);
+  if (!description) return ['Describe the item, e.g. "Marquee hire".'];
+  if (quantity === null || quantity <= 0) return ['Quantity must be more than 0, with up to 2 decimal places.'];
+  if (unitCost === null) return ['Unit cost must be 0 or more, with up to 2 decimal places.'];
+  return [null, { description, supplier: d.supplier.trim(), quantity, unit_cost: unitCost, status: d.status, due_date: d.dueDate || null }];
+};
+
+// The fields for adding or editing an item. Kept outside the panel so typing doesn't lose focus.
+function ItemFields({ draft, onChange, symbol, onSave, onCancel, saveLabel }) {
+  const quantity = parseMoney(draft.quantity);
+  const unitCost = parseMoney(draft.unitCost);
+  const preview = quantity !== null && unitCost !== null ? Math.round(quantity * unitCost * 100) / 100 : null;
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+      <input aria-label="Item description" placeholder="Item, e.g. Marquee hire" value={draft.description}
+        onChange={(e) => onChange({ description: e.target.value })} className={`${inputClass} sm:col-span-2`} />
+      <input aria-label="Supplier" placeholder="Supplier (optional)" value={draft.supplier}
+        onChange={(e) => onChange({ supplier: e.target.value })} className={inputClass} />
+      <input aria-label="Quantity" inputMode="decimal" placeholder="Quantity (or hours)" value={draft.quantity}
+        onChange={(e) => MONEY_TYPING.test(e.target.value) && onChange({ quantity: e.target.value })} className={inputClass} />
+      <input aria-label="Unit cost" inputMode="decimal" placeholder={`Unit cost (or hourly rate) in ${symbol}`} value={draft.unitCost}
+        onChange={(e) => MONEY_TYPING.test(e.target.value) && onChange({ unitCost: e.target.value })} className={inputClass} />
+      <select aria-label="Item status" value={draft.status}
+        onChange={(e) => onChange({ status: e.target.value })} className={inputClass}>
+        {ITEM_STATUSES.map(s => <option key={s}>{s}</option>)}
+      </select>
+      <label className="flex items-center gap-2 text-sm text-slate-600">
+        Due
+        <input type="date" aria-label="Due date" value={draft.dueDate}
+          onChange={(e) => onChange({ dueDate: e.target.value })} className={`${inputClass} flex-1`} />
+      </label>
+      <div className="flex flex-wrap items-center gap-2 sm:col-span-2">
+        <button onClick={onSave} className={primaryButton}>{saveLabel}</button>
+        <button onClick={onCancel} className={secondaryButton}>Cancel</button>
+        {preview !== null && <span className="text-sm text-slate-600">Total: <strong>{formatMoney(preview, draft.currency)}</strong></span>}
+      </div>
+    </div>
+  );
+}
 
 // Shows one project's cost categories and the items inside them.
 // Everyone in the organisation can view; only admins can add, change or delete.
@@ -31,31 +88,52 @@ export default function CostsPanel({ project, categories, items, isAdmin, supaba
   const money = (n) => formatMoney(n, project.currency);
   const symbol = CURRENCIES[project.currency].symbol;
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   const [newCategory, setNewCategory] = useState({ name: '', budget: '' });
   const [newItems, setNewItems] = useState({}); // draft item per category id
   const [addingItemTo, setAddingItemTo] = useState(null);
+  const [editingItem, setEditingItem] = useState(null); // { id, draft }
+  const [editingCategory, setEditingCategory] = useState(null); // { id, name, budget }
   const [confirmDelete, setConfirmDelete] = useState(null); // e.g. 'category-3' or 'item-12'
-  const [billCategoryId, setBillCategoryId] = useState('');
+
+  // ---- Logged time ready to bill ----
+  const [showBillOptions, setShowBillOptions] = useState(false);
+  const [excludedEntries, setExcludedEntries] = useState([]); // entry ids the user unticked
+  const [billCategoryId, setBillCategoryId] = useState(''); // '' = automatic
   const [billStatus, setBillStatus] = useState('Booked');
   const [billing, setBilling] = useState(false);
 
-  // Unbilled logged hours: charged at the rate recorded when logged, or the project's rate if none was.
   const projectRate = Number(project.hourly_rate) || 0;
-  const unbilledHours = sumMoney(unbilledTime.map(t => t.hours));
-  const unbilledValue = sumMoney(unbilledTime.map(t => t.hours * (t.hourly_rate || projectRate)));
-  const missingRate = unbilledTime.some(t => !(t.hourly_rate || projectRate));
-  // Suggest a Staffing/Labour category if there is one.
-  const defaultBillCategory = (categories.find(c => /staff|labou?r|time/i.test(c.name)) || categories[0])?.id;
-  const chosenBillCategory = billCategoryId || (defaultBillCategory ? String(defaultBillCategory) : '');
+  const rateFor = (entry) => entry.hourly_rate || projectRate; // rate when logged, else the project's rate
+  const selectedEntries = unbilledTime.filter(t => !excludedEntries.includes(t.id));
+  const selectedHours = sumMoney(selectedEntries.map(t => t.hours));
+  const selectedValue = sumMoney(selectedEntries.map(t => t.hours * rateFor(t)));
+  const missingRate = unbilledTime.some(t => !rateFor(t));
+  const autoCategory = categories.find(c => TIME_CATEGORY_PATTERN.test(c.name));
+  const billCategory = billCategoryId ? categories.find(c => String(c.id) === billCategoryId) : autoCategory;
+  const billTargetName = billCategory ? billCategory.name : `a new "${NEW_TIME_CATEGORY}" category`;
+
+  const toggleEntry = (id) =>
+    setExcludedEntries(excludedEntries.includes(id) ? excludedEntries.filter(x => x !== id) : [...excludedEntries, id]);
 
   const billTime = async () => {
-    if (!chosenBillCategory) return setError('Choose a category to bill the hours to.');
+    if (selectedEntries.length === 0) return setError('Tick at least one time entry to bill.');
     setBilling(true);
-    const err = await onBillTime(Number(chosenBillCategory), billStatus);
+    const err = await onBillTime({
+      projectId: project.id,
+      entryIds: selectedEntries.map(t => t.id),
+      categoryId: billCategory ? billCategory.id : null,
+      status: billStatus
+    });
     setBilling(false);
-    setError(err || '');
+    if (err) return setError(err);
+    setError('');
+    setNotice(`Billed ${selectedHours} h to ${billCategory ? billCategory.name : NEW_TIME_CATEGORY}. Use the pencil on the new item to change the hours, rate or wording.`);
+    setExcludedEntries([]);
+    setShowBillOptions(false);
   };
 
+  // ---- Totals ----
   const projectTotals = itemTotals(items);
   const allocated = sumMoney(categories.map(c => c.budget));
   const remaining = sumMoney([project.budget, -projectTotals.committed]);
@@ -71,43 +149,50 @@ export default function CostsPanel({ project, categories, items, isAdmin, supaba
     return true;
   };
 
+  // ---- Categories ----
+  const nameTaken = (name, exceptId) =>
+    categories.some(c => c.id !== exceptId && c.name.toLowerCase() === name.toLowerCase());
+
   const addCategory = async () => {
     const name = newCategory.name.trim();
     const budget = parseMoney(newCategory.budget);
     if (!name) return setError('Give the category a name.');
-    if (categories.some(c => c.name.toLowerCase() === name.toLowerCase())) return setError('This project already has a category with that name.');
+    if (nameTaken(name)) return setError('This project already has a category with that name.');
     if (budget === null) return setError('Category budget must be 0 or more, with up to 2 decimal places.');
     const ok = await run(supabase.from('project_categories').insert({ org_id: orgId, project_id: project.id, name, budget }));
     if (ok) setNewCategory({ name: '', budget: '' });
   };
 
+  const saveCategory = async () => {
+    const name = editingCategory.name.trim();
+    const budget = parseMoney(editingCategory.budget);
+    if (!name) return setError('Give the category a name.');
+    if (nameTaken(name, editingCategory.id)) return setError('This project already has a category with that name.');
+    if (budget === null) return setError('Category budget must be 0 or more, with up to 2 decimal places.');
+    const ok = await run(supabase.from('project_categories').update({ name, budget }).eq('id', editingCategory.id));
+    if (ok) setEditingCategory(null);
+  };
+
+  // ---- Items ----
   const draftFor = (categoryId) => newItems[categoryId] || emptyItem;
   const setDraft = (categoryId, changes) =>
     setNewItems({ ...newItems, [categoryId]: { ...draftFor(categoryId), ...changes } });
 
   const addItem = async (categoryId) => {
-    const d = draftFor(categoryId);
-    const description = d.description.trim();
-    const quantity = parseMoney(d.quantity);
-    const unitCost = parseMoney(d.unitCost);
-    if (!description) return setError('Describe the item, e.g. "Marquee hire".');
-    if (quantity === null || quantity <= 0) return setError('Quantity must be more than 0, with up to 2 decimal places.');
-    if (unitCost === null) return setError('Unit cost must be 0 or more, with up to 2 decimal places.');
-    const ok = await run(supabase.from('cost_items').insert({
-      org_id: orgId,
-      project_id: project.id,
-      category_id: categoryId,
-      description,
-      supplier: d.supplier.trim(),
-      quantity,
-      unit_cost: unitCost,
-      status: d.status,
-      due_date: d.dueDate || null
-    }));
+    const [err, row] = validateItem(draftFor(categoryId));
+    if (err) return setError(err);
+    const ok = await run(supabase.from('cost_items').insert({ org_id: orgId, project_id: project.id, category_id: categoryId, ...row }));
     if (ok) {
       setNewItems({ ...newItems, [categoryId]: emptyItem });
       setAddingItemTo(null);
     }
+  };
+
+  const saveItem = async () => {
+    const [err, row] = validateItem(editingItem.draft);
+    if (err) return setError(err);
+    const ok = await run(supabase.from('cost_items').update(row).eq('id', editingItem.id));
+    if (ok) setEditingItem(null);
   };
 
   const changeStatus = (item, status) => run(supabase.from('cost_items').update({ status }).eq('id', item.id));
@@ -128,6 +213,12 @@ export default function CostsPanel({ project, categories, items, isAdmin, supaba
         <Trash2 size={16} />
       </button>
     );
+
+  const EditButton = ({ label, onClick }) => (
+    <button onClick={() => { setError(''); setNotice(''); onClick(); }} aria-label={label} className="text-blue-600 hover:text-blue-800">
+      <Pencil size={16} />
+    </button>
+  );
 
   const Stat = ({ label, value, tone = 'text-slate-800' }) => (
     <div>
@@ -156,48 +247,85 @@ export default function CostsPanel({ project, categories, items, isAdmin, supaba
       )}
 
       {/* Logged time from Time Tracking that hasn't been billed yet (admins only) */}
-      {isAdmin && unbilledHours > 0 && (
-        <div className="bg-white border border-blue-200 rounded-lg px-4 py-3 space-y-2">
-          <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <h4 className="font-semibold text-slate-800">Logged time not yet billed</h4>
-            <span className="text-sm text-slate-600">
-              <strong className="text-slate-800">{unbilledHours} h</strong> from {unbilledTime.length} time {unbilledTime.length === 1 ? 'entry' : 'entries'}
-              {!missingRate && <> · <strong className="text-slate-800">{money(unbilledValue)}</strong></>}
-            </span>
+      {isAdmin && unbilledTime.length > 0 && (
+        <div className="bg-white border border-blue-200 rounded-lg px-4 py-3 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Clock size={18} className="text-blue-600" />
+              <div>
+                <h4 className="font-semibold text-slate-800">Logged time ready to bill</h4>
+                <p className="text-sm text-slate-600">
+                  <strong className="text-slate-800">{selectedHours} h</strong>
+                  {!missingRate && <> · <strong className="text-slate-800">{money(selectedValue)}</strong></>}
+                  {selectedEntries.length !== unbilledTime.length && <> · {selectedEntries.length} of {unbilledTime.length} entries</>}
+                </p>
+              </div>
+            </div>
+            {!missingRate && (
+              <div className="flex flex-wrap items-center gap-3">
+                <button onClick={billTime} disabled={billing || selectedEntries.length === 0} className={primaryButton}>
+                  {billing ? 'Billing…' : `Bill ${selectedHours} h to ${billCategory ? billCategory.name : NEW_TIME_CATEGORY}`}
+                </button>
+                <button onClick={() => setShowBillOptions(!showBillOptions)} aria-expanded={showBillOptions}
+                  className="text-sm text-blue-700 hover:text-blue-900">
+                  {showBillOptions ? 'Hide options' : 'Change what’s billed'}
+                </button>
+              </div>
+            )}
           </div>
+
           {missingRate ? (
             <p className="text-amber-700 text-sm">
-              Some of these hours have no hourly rate. Set an hourly rate on the project (pencil button) to bill them.
+              Some of these hours have no hourly rate. Set an hourly rate on the project (pencil button next to the project) to bill them.
             </p>
-          ) : categories.length === 0 ? (
-            <p className="text-slate-500 text-sm">Add a category below (e.g. Staffing) to bill these hours to.</p>
           ) : (
-            <div className="flex flex-wrap items-center gap-2">
-              <label className="text-sm text-slate-600 flex items-center gap-2">
-                Bill to
-                <select aria-label="Category to bill hours to" value={chosenBillCategory}
-                  onChange={(e) => setBillCategoryId(e.target.value)} className={inputClass}>
-                  {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-              </label>
-              <label className="text-sm text-slate-600 flex items-center gap-2">
-                as
-                <select aria-label="Status for billed hours" value={billStatus}
-                  onChange={(e) => setBillStatus(e.target.value)} className={inputClass}>
-                  {ITEM_STATUSES.map(s => <option key={s}>{s}</option>)}
-                </select>
-              </label>
-              <button onClick={billTime} disabled={billing}
-                className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700 disabled:opacity-60">
-                {billing ? 'Billing…' : `Bill ${unbilledHours} h`}
-              </button>
+            <p className="text-slate-500 text-xs">
+              Adds the hours to {billTargetName} as a {billStatus} cost item (one per hourly rate). You can edit it afterwards like any other item.
+            </p>
+          )}
+
+          {showBillOptions && !missingRate && (
+            <div className="border-t border-slate-100 pt-3 space-y-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <label className="text-sm text-slate-600 flex items-center gap-2">
+                  Category
+                  <select aria-label="Category to bill hours to" value={billCategoryId}
+                    onChange={(e) => setBillCategoryId(e.target.value)} className={inputClass}>
+                    <option value="">{autoCategory ? `${autoCategory.name} (suggested)` : `New "${NEW_TIME_CATEGORY}" category`}</option>
+                    {categories.filter(c => c !== autoCategory).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                </label>
+                <label className="text-sm text-slate-600 flex items-center gap-2">
+                  Status
+                  <select aria-label="Status for billed hours" value={billStatus}
+                    onChange={(e) => setBillStatus(e.target.value)} className={inputClass}>
+                    {ITEM_STATUSES.map(s => <option key={s}>{s}</option>)}
+                  </select>
+                </label>
+              </div>
+              <fieldset>
+                <legend className="text-sm text-slate-600 mb-1">Time entries to include</legend>
+                <ul className="space-y-1">
+                  {unbilledTime.map(t => (
+                    <li key={t.id}>
+                      <label className="flex flex-wrap items-center gap-2 text-sm text-slate-700">
+                        <input type="checkbox" checked={!excludedEntries.includes(t.id)} onChange={() => toggleEntry(t.id)}
+                          aria-label={`Include ${t.entry_date}, ${t.hours} h`} />
+                        <span className="whitespace-nowrap">{t.entry_date}</span>
+                        <span className="font-medium">{t.hours} h</span>
+                        <span className="text-slate-500">× {money(rateFor(t))}</span>
+                        {t.note && <span className="text-slate-500 truncate max-w-xs">· {t.note}</span>}
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+              </fieldset>
             </div>
           )}
-          <p className="text-slate-500 text-xs">
-            Billing adds the hours as a cost item and marks them “Billed” in Time Tracking. Delete that cost item to unbill them.
-          </p>
         </div>
       )}
+
+      {notice && <p className="text-green-700 text-sm" role="status">{notice}</p>}
 
       {categories.length === 0 && (
         <p className="text-slate-500 text-sm">
@@ -210,19 +338,37 @@ export default function CostsPanel({ project, categories, items, isAdmin, supaba
         const catItems = items.filter(i => i.category_id === category.id);
         const t = itemTotals(catItems);
         const catLeft = sumMoney([category.budget, -t.committed]);
-        const draft = draftFor(category.id);
+        const isEditingCategory = editingCategory?.id === category.id;
         return (
           <div key={category.id} className="bg-white border border-slate-200 rounded-lg">
-            <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-slate-100">
-              <h4 className="font-semibold text-slate-800">{category.name}</h4>
-              <div className="flex flex-wrap items-center gap-4 text-sm text-slate-600">
-                <span>Budget <strong className="text-slate-800">{money(category.budget)}</strong></span>
-                <span>Committed <strong className="text-slate-800">{money(t.committed)}</strong></span>
-                <span>Paid <strong className="text-slate-800">{money(t.paid)}</strong></span>
-                <span>Left <strong className={catLeft < 0 ? 'text-red-700' : 'text-green-700'}>{money(catLeft)}</strong></span>
-                {isAdmin && <DeleteButton kind="category" id={category.id} table="project_categories" label={`Delete category ${category.name} and its items`} />}
+            {isEditingCategory ? (
+              <div className="flex flex-wrap items-center gap-2 px-4 py-3 border-b border-slate-100">
+                <input aria-label="Category name" value={editingCategory.name}
+                  onChange={(e) => setEditingCategory({ ...editingCategory, name: e.target.value })} className={inputClass} />
+                <input aria-label="Category budget" inputMode="decimal" placeholder={`Budget in ${symbol}`} value={editingCategory.budget}
+                  onChange={(e) => MONEY_TYPING.test(e.target.value) && setEditingCategory({ ...editingCategory, budget: e.target.value })}
+                  className={inputClass} />
+                <button onClick={saveCategory} className={primaryButton}>Save category</button>
+                <button onClick={() => setEditingCategory(null)} className={secondaryButton}>Cancel</button>
               </div>
-            </div>
+            ) : (
+              <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-slate-100">
+                <h4 className="font-semibold text-slate-800">{category.name}</h4>
+                <div className="flex flex-wrap items-center gap-4 text-sm text-slate-600">
+                  <span>Budget <strong className="text-slate-800">{money(category.budget)}</strong></span>
+                  <span>Committed <strong className="text-slate-800">{money(t.committed)}</strong></span>
+                  <span>Paid <strong className="text-slate-800">{money(t.paid)}</strong></span>
+                  <span>Left <strong className={catLeft < 0 ? 'text-red-700' : 'text-green-700'}>{money(catLeft)}</strong></span>
+                  {isAdmin && (
+                    <span className="flex items-center gap-3">
+                      <EditButton label={`Edit category ${category.name}`}
+                        onClick={() => setEditingCategory({ id: category.id, name: category.name, budget: String(category.budget) })} />
+                      <DeleteButton kind="category" id={category.id} table="project_categories" label={`Delete category ${category.name} and its items`} />
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
 
             {catItems.length > 0 && (
               <div className="overflow-x-auto">
@@ -239,7 +385,20 @@ export default function CostsPanel({ project, categories, items, isAdmin, supaba
                     </tr>
                   </thead>
                   <tbody>
-                    {catItems.map((item) => (
+                    {catItems.map((item) => editingItem?.id === item.id ? (
+                      <tr key={item.id} className="border-t border-slate-100 bg-blue-50/40">
+                        <td colSpan={isAdmin ? 7 : 6} className="py-3 px-4">
+                          <ItemFields
+                            draft={{ ...editingItem.draft, currency: project.currency }}
+                            onChange={(changes) => setEditingItem({ ...editingItem, draft: { ...editingItem.draft, ...changes } })}
+                            symbol={symbol}
+                            onSave={saveItem}
+                            onCancel={() => setEditingItem(null)}
+                            saveLabel="Save changes"
+                          />
+                        </td>
+                      </tr>
+                    ) : (
                       <tr key={item.id} className="border-t border-slate-100">
                         <td className="py-2 px-4 text-slate-800">{item.description}</td>
                         <td className="py-2 px-4 text-slate-600">{item.supplier || '—'}</td>
@@ -261,8 +420,12 @@ export default function CostsPanel({ project, categories, items, isAdmin, supaba
                         </td>
                         <td className="py-2 px-4 text-slate-600 whitespace-nowrap">{item.due_date || '—'}</td>
                         {isAdmin && (
-                          <td className="py-2 px-4 text-right">
-                            <DeleteButton kind="item" id={item.id} table="cost_items" label={`Delete item ${item.description}`} />
+                          <td className="py-2 px-4">
+                            <span className="flex items-center justify-end gap-3">
+                              <EditButton label={`Edit item ${item.description}`}
+                                onClick={() => setEditingItem({ id: item.id, draft: itemToDraft(item) })} />
+                              <DeleteButton kind="item" id={item.id} table="cost_items" label={`Delete item ${item.description}`} />
+                            </span>
                           </td>
                         )}
                       </tr>
@@ -273,31 +436,18 @@ export default function CostsPanel({ project, categories, items, isAdmin, supaba
             )}
 
             {isAdmin && (addingItemTo === category.id ? (
-              <div className="px-4 py-3 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-3 gap-2">
-                <input aria-label="Item description" placeholder="Item, e.g. Marquee hire" value={draft.description}
-                  onChange={(e) => setDraft(category.id, { description: e.target.value })} className={`${inputClass} sm:col-span-2`} />
-                <input aria-label="Supplier" placeholder="Supplier (optional)" value={draft.supplier}
-                  onChange={(e) => setDraft(category.id, { supplier: e.target.value })} className={inputClass} />
-                <input aria-label="Quantity" inputMode="decimal" placeholder="Quantity" value={draft.quantity}
-                  onChange={(e) => MONEY_TYPING.test(e.target.value) && setDraft(category.id, { quantity: e.target.value })} className={inputClass} />
-                <input aria-label="Unit cost" inputMode="decimal" placeholder={`Unit cost in ${symbol}`} value={draft.unitCost}
-                  onChange={(e) => MONEY_TYPING.test(e.target.value) && setDraft(category.id, { unitCost: e.target.value })} className={inputClass} />
-                <select aria-label="Item status" value={draft.status}
-                  onChange={(e) => setDraft(category.id, { status: e.target.value })} className={inputClass}>
-                  {ITEM_STATUSES.map(s => <option key={s}>{s}</option>)}
-                </select>
-                <label className="flex items-center gap-2 text-sm text-slate-600">
-                  Due
-                  <input type="date" aria-label="Due date" value={draft.dueDate}
-                    onChange={(e) => setDraft(category.id, { dueDate: e.target.value })} className={`${inputClass} flex-1`} />
-                </label>
-                <div className="flex gap-2 sm:col-span-2">
-                  <button onClick={() => addItem(category.id)} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700">Save item</button>
-                  <button onClick={() => setAddingItemTo(null)} className="bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm hover:bg-slate-300">Cancel</button>
-                </div>
+              <div className="px-4 py-3 border-t border-slate-100">
+                <ItemFields
+                  draft={{ ...draftFor(category.id), currency: project.currency }}
+                  onChange={(changes) => setDraft(category.id, changes)}
+                  symbol={symbol}
+                  onSave={() => addItem(category.id)}
+                  onCancel={() => setAddingItemTo(null)}
+                  saveLabel="Save item"
+                />
               </div>
             ) : (
-              <button onClick={() => { setError(''); setAddingItemTo(category.id); }}
+              <button onClick={() => { setError(''); setNotice(''); setAddingItemTo(category.id); }}
                 className="flex items-center gap-1 px-4 py-2 text-sm text-blue-700 hover:text-blue-900">
                 <Plus size={16} /> Add item to {category.name}
               </button>
@@ -324,7 +474,7 @@ export default function CostsPanel({ project, categories, items, isAdmin, supaba
         </div>
       )}
 
-      {error && <p className="text-red-600 text-sm">{error}</p>}
+      {error && <p className="text-red-600 text-sm" role="alert">{error}</p>}
     </div>
   );
 }
