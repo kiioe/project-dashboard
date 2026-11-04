@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { Calendar, Plus, Trash2, TrendingUp, Clock, CheckCircle, AlertCircle } from 'lucide-react';
+import { Calendar, Plus, Trash2, Pencil, TrendingUp, Clock, CheckCircle, AlertCircle } from 'lucide-react';
 import { SignedIn, SignedOut, SignInButton, UserButton, useUser, useSession, useOrganization, CreateOrganization, OrganizationSwitcher } from '@clerk/clerk-react';
 import { createClient } from '@supabase/supabase-js';
 import { MONEY_TYPING, parseMoney, CURRENCIES, DEFAULT_CURRENCY, formatMoney, sumMoney } from './money';
@@ -115,6 +115,7 @@ const ProjectDashboard = () => {
   const [showAddForm, setShowAddForm] = useState(false);
   const [newProject, setNewProject] = useState(emptyProject);
   const [projectError, setProjectError] = useState('');
+  const [editingId, setEditingId] = useState(null); // null = adding a new project
   const [chartCurrency, setChartCurrency] = useState(DEFAULT_CURRENCY);
 
   const calculateMetrics = () => {
@@ -128,7 +129,53 @@ const ProjectDashboard = () => {
 
   const metrics = calculateMetrics();
 
-  const addProject = async () => {
+  const closeProjectForm = () => {
+    setShowAddForm(false);
+    setEditingId(null);
+    setNewProject(emptyProject);
+    setProjectError('');
+  };
+
+  const openNewProjectForm = () => {
+    if (showAddForm && editingId === null) return closeProjectForm();
+    setEditingId(null);
+    setNewProject(emptyProject);
+    setProjectError('');
+    setShowAddForm(true);
+  };
+
+  // Open the same form, filled in with an existing project's details.
+  const startEditing = (project) => {
+    setEditingId(project.id);
+    setNewProject({
+      name: project.name,
+      status: project.status,
+      progress: String(project.progress ?? 0),
+      startDate: project.startDate || '',
+      endDate: project.endDate || '',
+      owner: project.owner || '',
+      budget: String(project.budget),
+      spent: String(project.spent),
+      hourlyRate: Number(project.hourly_rate) || 0,
+      currency: project.currency
+    });
+    setProjectError('');
+    setShowAddForm(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // A project's currency is fixed once it has cost categories, so their amounts keep their meaning.
+  const currencyLocked = editingId !== null && categories.some(c => c.project_id === editingId);
+
+  const saveProject = async () => {
+    if (!newProject.name.trim() || !newProject.startDate || !newProject.endDate) {
+      setProjectError('Add a project name, start date and end date.');
+      return;
+    }
+    if (newProject.endDate < newProject.startDate) {
+      setProjectError('The end date can’t be before the start date.');
+      return;
+    }
     // Budget and Amount Spent: 0 or more, up to 2 decimal places; blank counts as 0.
     const budget = parseMoney(newProject.budget);
     if (budget === null) {
@@ -146,29 +193,27 @@ const ProjectDashboard = () => {
       setProjectError('Progress must be a whole number from 0 to 100.');
       return;
     }
-    if (newProject.name && newProject.startDate && newProject.endDate) {
-      const { error } = await supabase.from('projects').insert({
-        org_id: organization.id,
-        name: newProject.name,
-        status: newProject.status,
-        progress,
-        start_date: newProject.startDate,
-        end_date: newProject.endDate,
-        owner: newProject.owner,
-        budget,
-        spent,
-        hourly_rate: newProject.hourlyRate,
-        currency: newProject.currency
-      });
-      if (error) {
-        setProjectError('Could not save the project. Please try again.');
-        return;
-      }
-      setProjectError('');
-      fetchProjects();
-      setNewProject(emptyProject);
-      setShowAddForm(false);
+    const details = {
+      name: newProject.name.trim(),
+      status: newProject.status,
+      progress,
+      start_date: newProject.startDate,
+      end_date: newProject.endDate,
+      owner: newProject.owner,
+      budget,
+      spent,
+      hourly_rate: newProject.hourlyRate,
+      currency: newProject.currency
+    };
+    const { error } = editingId === null
+      ? await supabase.from('projects').insert({ org_id: organization.id, ...details })
+      : await supabase.from('projects').update(details).eq('id', editingId);
+    if (error) {
+      setProjectError('Could not save the project. Please try again.');
+      return;
     }
+    closeProjectForm();
+    fetchProjects();
   };
 
   const deleteProject = async (id) => {
@@ -286,7 +331,7 @@ const ProjectDashboard = () => {
             <OrganizationSwitcher />
             {isAdmin && (
               <button
-                onClick={() => setShowAddForm(!showAddForm)}
+                onClick={openNewProjectForm}
                 className="flex items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors shadow-lg"
               >
                 <Plus size={20} />
@@ -335,7 +380,9 @@ const ProjectDashboard = () => {
         {/* Add Project Form */}
         {showAddForm && isAdmin && (
           <div className="bg-white p-6 rounded-xl shadow-md border border-slate-200 mb-8">
-            <h2 className="text-xl font-bold text-slate-800 mb-4">Add New Project</h2>
+            <h2 className="text-xl font-bold text-slate-800 mb-4">
+              {editingId === null ? 'Add New Project' : `Edit Project: ${projects.find(p => p.id === editingId)?.name ?? ''}`}
+            </h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <input
                 type="text"
@@ -377,8 +424,10 @@ const ProjectDashboard = () => {
               <select
                 aria-label="Currency"
                 value={newProject.currency}
+                disabled={currencyLocked}
+                title={currencyLocked ? 'Currency can’t change once the project has cost categories' : undefined}
                 onChange={(e) => setNewProject({...newProject, currency: e.target.value})}
-                className={inputClass}
+                className={`${inputClass} disabled:bg-slate-100 disabled:text-slate-500`}
               >
                 {Object.entries(CURRENCIES).map(([code, c]) => (
                   <option key={code} value={code}>Currency: {c.label}</option>
@@ -435,18 +484,21 @@ const ProjectDashboard = () => {
             </div>
             <div className="flex gap-4 mt-4">
               <button
-                onClick={addProject}
+                onClick={saveProject}
                 className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors"
               >
-                Save Project
+                {editingId === null ? 'Save Project' : 'Save Changes'}
               </button>
               <button
-                onClick={() => setShowAddForm(false)}
+                onClick={closeProjectForm}
                 className="bg-slate-200 text-slate-700 px-6 py-2 rounded-lg hover:bg-slate-300 transition-colors"
               >
                 Cancel
               </button>
             </div>
+            {currencyLocked && (
+              <p className="text-slate-500 text-sm mt-3">The currency is fixed because this project already has cost categories.</p>
+            )}
             {projectError && <p className="text-red-600 text-sm mt-3">{projectError}</p>}
           </div>
         )}
@@ -685,12 +737,24 @@ const ProjectDashboard = () => {
                     </td>
                     {isAdmin && (
                       <td className="py-3 px-4">
-                        <button
-                          onClick={() => deleteProject(project.id)}
-                          className="text-red-600 hover:text-red-800 transition-colors"
-                        >
-                          <Trash2 size={18} />
-                        </button>
+                        <div className="flex items-center gap-3">
+                          <button
+                            onClick={() => startEditing(project)}
+                            aria-label={`Edit ${project.name}`}
+                            title="Edit project"
+                            className="text-blue-600 hover:text-blue-800 transition-colors"
+                          >
+                            <Pencil size={18} />
+                          </button>
+                          <button
+                            onClick={() => deleteProject(project.id)}
+                            aria-label={`Delete ${project.name}`}
+                            title="Delete project"
+                            className="text-red-600 hover:text-red-800 transition-colors"
+                          >
+                            <Trash2 size={18} />
+                          </button>
+                        </div>
                       </td>
                     )}
                   </tr>
