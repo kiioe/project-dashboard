@@ -85,6 +85,7 @@ const ProjectDashboard = () => {
 
   const [showAddForm, setShowAddForm] = useState(false);
   const [newProject, setNewProject] = useState(emptyProject);
+  const [projectError, setProjectError] = useState('');
 
   const calculateMetrics = () => {
     const total = projects.length;
@@ -100,6 +101,10 @@ const ProjectDashboard = () => {
   const metrics = calculateMetrics();
 
   const addProject = async () => {
+    if (!Number.isInteger(newProject.budget) || newProject.budget <= 0) {
+      setProjectError('Budget must be a whole number greater than 0.');
+      return;
+    }
     if (newProject.name && newProject.startDate && newProject.endDate) {
       const { error } = await supabase.from('projects').insert({
         org_id: organization.id,
@@ -113,11 +118,14 @@ const ProjectDashboard = () => {
         spent: newProject.spent,
         hourly_rate: newProject.hourlyRate
       });
-      if (!error) {
-        fetchProjects();
-        setNewProject(emptyProject);
-        setShowAddForm(false);
+      if (error) {
+        setProjectError('Could not save the project. Please try again.');
+        return;
       }
+      setProjectError('');
+      fetchProjects();
+      setNewProject(emptyProject);
+      setShowAddForm(false);
     }
   };
 
@@ -321,9 +329,16 @@ const ProjectDashboard = () => {
               />
               <input
                 type="number"
+                min="1"
+                step="1"
+                inputMode="numeric"
                 placeholder="Budget"
                 value={newProject.budget || ''}
-                onChange={(e) => setNewProject({...newProject, budget: Number(e.target.value)})}
+                onKeyDown={(e) => { if (['-', '+', '.', ',', 'e', 'E'].includes(e.key)) e.preventDefault(); }}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v === '' || /^\d+$/.test(v)) setNewProject({...newProject, budget: Number(v)});
+                }}
                 className={inputClass}
               />
               <input
@@ -364,6 +379,7 @@ const ProjectDashboard = () => {
                 Cancel
               </button>
             </div>
+            {projectError && <p className="text-red-600 text-sm mt-3">{projectError}</p>}
           </div>
         )}
 
