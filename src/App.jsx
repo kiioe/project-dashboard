@@ -19,6 +19,21 @@ const todayStr = () => {
   return d.toISOString().slice(0, 10);
 };
 
+// Money amounts: 0 or more, up to 2 decimal places (pounds and pence).
+// What the field accepts while typing (allows a trailing "." mid-entry).
+const MONEY_TYPING = /^\d*(\.\d{0,2})?$/;
+
+// Turn the field's text into a number; blank counts as 0. Returns null if invalid.
+const parseMoney = (text) => {
+  const t = text.replace(/\.$/, '');
+  if (!/^\d*(\.\d{1,2})?$/.test(t)) return null;
+  return t === '' ? 0 : Number(t);
+};
+
+// Whole amounts show without decimals; amounts with pence always show 2 decimals.
+const formatMoney = (n) =>
+  n.toLocaleString(undefined, Number.isInteger(n) ? {} : { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
 const emptyProject = {
   name: '',
   status: 'Planning',
@@ -27,7 +42,7 @@ const emptyProject = {
   endDate: '',
   owner: '',
   budget: '',
-  spent: 0,
+  spent: '',
   hourlyRate: 0
 };
 
@@ -66,6 +81,7 @@ const ProjectDashboard = () => {
       setProjects(data.map(p => ({
         ...p,
         budget: Number(p.budget),
+        spent: Number(p.spent),
         startDate: p.start_date,
         endDate: p.end_date
       })));
@@ -102,11 +118,15 @@ const ProjectDashboard = () => {
   const metrics = calculateMetrics();
 
   const addProject = async () => {
-    // Budget is 0 or more with up to 2 decimal places; a blank budget counts as 0 (free).
-    const budgetText = newProject.budget.replace(/\.$/, '');
-    const budget = budgetText === '' ? 0 : Number(budgetText);
-    if (!/^\d*(\.\d{1,2})?$/.test(budgetText) || !Number.isFinite(budget) || budget < 0) {
+    // Budget and Amount Spent: 0 or more, up to 2 decimal places; blank counts as 0.
+    const budget = parseMoney(newProject.budget);
+    if (budget === null) {
       setProjectError('Budget must be 0 or more, with up to 2 decimal places.');
+      return;
+    }
+    const spent = parseMoney(newProject.spent);
+    if (spent === null) {
+      setProjectError('Amount Spent must be 0 or more, with up to 2 decimal places.');
       return;
     }
     if (newProject.name && newProject.startDate && newProject.endDate) {
@@ -119,7 +139,7 @@ const ProjectDashboard = () => {
         end_date: newProject.endDate,
         owner: newProject.owner,
         budget,
-        spent: newProject.spent,
+        spent,
         hourly_rate: newProject.hourlyRate
       });
       if (error) {
@@ -337,9 +357,7 @@ const ProjectDashboard = () => {
                 placeholder="Budget (0 if free)"
                 value={newProject.budget}
                 onChange={(e) => {
-                  // Digits with at most one decimal point and up to 2 decimal places
-                  const v = e.target.value;
-                  if (/^\d*(\.\d{0,2})?$/.test(v)) setNewProject({...newProject, budget: v});
+                  if (MONEY_TYPING.test(e.target.value)) setNewProject({...newProject, budget: e.target.value});
                 }}
                 className={inputClass}
               />
@@ -351,10 +369,13 @@ const ProjectDashboard = () => {
                 className={inputClass}
               />
               <input
-                type="number"
-                placeholder="Amount Spent"
-                value={newProject.spent || ''}
-                onChange={(e) => setNewProject({...newProject, spent: Number(e.target.value)})}
+                type="text"
+                inputMode="decimal"
+                placeholder="Amount Spent (0 if none)"
+                value={newProject.spent}
+                onChange={(e) => {
+                  if (MONEY_TYPING.test(e.target.value)) setNewProject({...newProject, spent: e.target.value});
+                }}
                 className={inputClass}
               />
               <input
@@ -582,7 +603,7 @@ const ProjectDashboard = () => {
                       </div>
                     </td>
                     <td className="py-3 px-4 text-sm text-slate-600">
-                      ${project.spent.toLocaleString()} / ${project.budget.toLocaleString(undefined, Number.isInteger(project.budget) ? {} : { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      ${formatMoney(project.spent)} / ${formatMoney(project.budget)}
                     </td>
                     {isAdmin && (
                       <td className="py-3 px-4">
