@@ -27,7 +27,7 @@ const emptyItem = { description: '', supplier: '', quantity: '1', unitCost: '', 
 
 // Shows one project's cost categories and the items inside them.
 // Everyone in the organisation can view; only admins can add, change or delete.
-export default function CostsPanel({ project, categories, items, isAdmin, supabase, orgId, onChanged }) {
+export default function CostsPanel({ project, categories, items, isAdmin, supabase, orgId, onChanged, unbilledTime = [], onBillTime }) {
   const money = (n) => formatMoney(n, project.currency);
   const symbol = CURRENCIES[project.currency].symbol;
   const [error, setError] = useState('');
@@ -35,6 +35,26 @@ export default function CostsPanel({ project, categories, items, isAdmin, supaba
   const [newItems, setNewItems] = useState({}); // draft item per category id
   const [addingItemTo, setAddingItemTo] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null); // e.g. 'category-3' or 'item-12'
+  const [billCategoryId, setBillCategoryId] = useState('');
+  const [billStatus, setBillStatus] = useState('Booked');
+  const [billing, setBilling] = useState(false);
+
+  // Unbilled logged hours: charged at the rate recorded when logged, or the project's rate if none was.
+  const projectRate = Number(project.hourly_rate) || 0;
+  const unbilledHours = sumMoney(unbilledTime.map(t => t.hours));
+  const unbilledValue = sumMoney(unbilledTime.map(t => t.hours * (t.hourly_rate || projectRate)));
+  const missingRate = unbilledTime.some(t => !(t.hourly_rate || projectRate));
+  // Suggest a Staffing/Labour category if there is one.
+  const defaultBillCategory = (categories.find(c => /staff|labou?r|time/i.test(c.name)) || categories[0])?.id;
+  const chosenBillCategory = billCategoryId || (defaultBillCategory ? String(defaultBillCategory) : '');
+
+  const billTime = async () => {
+    if (!chosenBillCategory) return setError('Choose a category to bill the hours to.');
+    setBilling(true);
+    const err = await onBillTime(Number(chosenBillCategory), billStatus);
+    setBilling(false);
+    setError(err || '');
+  };
 
   const projectTotals = itemTotals(items);
   const allocated = sumMoney(categories.map(c => c.budget));
@@ -133,6 +153,50 @@ export default function CostsPanel({ project, categories, items, isAdmin, supaba
         <p className="text-slate-500 text-xs">
           Also counted in this project's Amount Spent: {money(project.spent)} entered on the project (not itemised).
         </p>
+      )}
+
+      {/* Logged time from Time Tracking that hasn't been billed yet (admins only) */}
+      {isAdmin && unbilledHours > 0 && (
+        <div className="bg-white border border-blue-200 rounded-lg px-4 py-3 space-y-2">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h4 className="font-semibold text-slate-800">Logged time not yet billed</h4>
+            <span className="text-sm text-slate-600">
+              <strong className="text-slate-800">{unbilledHours} h</strong> from {unbilledTime.length} time {unbilledTime.length === 1 ? 'entry' : 'entries'}
+              {!missingRate && <> · <strong className="text-slate-800">{money(unbilledValue)}</strong></>}
+            </span>
+          </div>
+          {missingRate ? (
+            <p className="text-amber-700 text-sm">
+              Some of these hours have no hourly rate. Set an hourly rate on the project (pencil button) to bill them.
+            </p>
+          ) : categories.length === 0 ? (
+            <p className="text-slate-500 text-sm">Add a category below (e.g. Staffing) to bill these hours to.</p>
+          ) : (
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="text-sm text-slate-600 flex items-center gap-2">
+                Bill to
+                <select aria-label="Category to bill hours to" value={chosenBillCategory}
+                  onChange={(e) => setBillCategoryId(e.target.value)} className={inputClass}>
+                  {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </label>
+              <label className="text-sm text-slate-600 flex items-center gap-2">
+                as
+                <select aria-label="Status for billed hours" value={billStatus}
+                  onChange={(e) => setBillStatus(e.target.value)} className={inputClass}>
+                  {ITEM_STATUSES.map(s => <option key={s}>{s}</option>)}
+                </select>
+              </label>
+              <button onClick={billTime} disabled={billing}
+                className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700 disabled:opacity-60">
+                {billing ? 'Billing…' : `Bill ${unbilledHours} h`}
+              </button>
+            </div>
+          )}
+          <p className="text-slate-500 text-xs">
+            Billing adds the hours as a cost item and marks them “Billed” in Time Tracking. Delete that cost item to unbill them.
+          </p>
+        </div>
       )}
 
       {categories.length === 0 && (

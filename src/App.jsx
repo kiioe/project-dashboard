@@ -53,6 +53,7 @@ const ProjectDashboard = () => {
 
   const [categories, setCategories] = useState([]);
   const [costItems, setCostItems] = useState([]);
+  const [unbilledTime, setUnbilledTime] = useState([]); // time entries not yet billed (admins only)
   const [openCostsFor, setOpenCostsFor] = useState(null);
 
   useEffect(() => {
@@ -99,6 +100,32 @@ const ProjectDashboard = () => {
         total: Number(i.total)
       })));
     }
+    if (isAdmin) fetchUnbilledTime();
+  };
+
+  // Every unbilled time entry (not limited like the Time Tracking list), so billing totals are complete.
+  const fetchUnbilledTime = async () => {
+    const { data, error } = await supabase
+      .from('time_entries')
+      .select('id, project_id, hours, hourly_rate, entry_date')
+      .eq('org_id', organization.id)
+      .is('cost_item_id', null);
+    if (!error) {
+      setUnbilledTime(data.map(t => ({ ...t, hours: Number(t.hours), hourly_rate: Number(t.hourly_rate) || 0 })));
+    }
+  };
+
+  // Turns a project's unbilled hours into cost items in the chosen category (done by the database in one step).
+  const billLoggedTime = async (categoryId, status) => {
+    const { error } = await supabase.rpc('bill_logged_time', { p_category_id: categoryId, p_status: status });
+    await Promise.all([fetchCosts(), fetchTimeEntries()]);
+    return error ? (error.message || 'Could not bill the logged time. Please try again.') : null;
+  };
+
+  // Cost changes can bill or unbill hours, so refresh the Time Tracking list too.
+  const refreshCostsAndTime = async () => {
+    await fetchCosts();
+    if (isAdmin) fetchTimeEntries();
   };
 
   const fetchTimeEntries = async () => {
@@ -254,11 +281,15 @@ const ProjectDashboard = () => {
     setTimeError('');
     setNewEntry({ projectId: newEntry.projectId, date: todayStr(), hours: '', note: '' });
     fetchTimeEntries();
+    fetchUnbilledTime();
   };
 
   const deleteTimeEntry = async (id) => {
     const { error } = await supabase.from('time_entries').delete().eq('id', id);
-    if (!error) fetchTimeEntries();
+    if (!error) {
+      fetchTimeEntries();
+      fetchUnbilledTime();
+    }
   };
 
   const projectName = (id) => projects.find(p => p.id === id)?.name || 'Unknown project';
@@ -679,9 +710,17 @@ const ProjectDashboard = () => {
                           {entry.user_id === user.id ? 'You' : 'Teammate'}
                         </td>
                         <td className="py-3 px-4">
-                          {entry.user_id === user.id && (
+                          {entry.cost_item_id ? (
+                            <span
+                              className="px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800"
+                              title="These hours are on a cost item. Delete that cost item to unbill them."
+                            >
+                              Billed
+                            </span>
+                          ) : entry.user_id === user.id && (
                             <button
                               onClick={() => deleteTimeEntry(entry.id)}
+                              aria-label="Delete time entry"
                               className="text-red-600 hover:text-red-800 transition-colors"
                             >
                               <Trash2 size={18} />
@@ -805,7 +844,9 @@ const ProjectDashboard = () => {
                           isAdmin={isAdmin}
                           supabase={supabase}
                           orgId={organization.id}
-                          onChanged={fetchCosts}
+                          onChanged={refreshCostsAndTime}
+                          unbilledTime={unbilledTime.filter(t => t.project_id === project.id)}
+                          onBillTime={billLoggedTime}
                         />
                       </td>
                     </tr>
