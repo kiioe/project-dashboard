@@ -51,7 +51,7 @@ const formatMoney = (n, currency = DEFAULT_CURRENCY) =>
 const emptyProject = {
   name: '',
   status: 'Planning',
-  progress: 0,
+  progress: '0',
   startDate: '',
   endDate: '',
   owner: '',
@@ -144,12 +144,18 @@ const ProjectDashboard = () => {
       setProjectError('Amount Spent must be 0 or more, with up to 2 decimal places.');
       return;
     }
+    // Progress: a whole number from 0 to 100; blank counts as 0.
+    const progress = newProject.progress === '' ? 0 : Number(newProject.progress);
+    if (!Number.isInteger(progress) || progress < 0 || progress > 100) {
+      setProjectError('Progress must be a whole number from 0 to 100.');
+      return;
+    }
     if (newProject.name && newProject.startDate && newProject.endDate) {
       const { error } = await supabase.from('projects').insert({
         org_id: organization.id,
         name: newProject.name,
         status: newProject.status,
-        progress: newProject.progress,
+        progress,
         start_date: newProject.startDate,
         end_date: newProject.endDate,
         owner: newProject.owner,
@@ -388,13 +394,25 @@ const ProjectDashboard = () => {
                 }}
                 className={inputClass}
               />
-              <input
-                type="number"
-                placeholder="Progress (0-100)"
-                value={newProject.progress || ''}
-                onChange={(e) => setNewProject({...newProject, progress: Math.min(100, Number(e.target.value))})}
-                className={inputClass}
-              />
+              <label className="flex items-center gap-2">
+                <span className="text-sm text-slate-600 whitespace-nowrap">Progress %</span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  aria-label="Progress (0 to 100)"
+                  placeholder="0 to 100"
+                  value={newProject.progress}
+                  onChange={(e) => {
+                    // Whole numbers 0 to 100 only; a leading zero is dropped (so "05" becomes "5").
+                    const v = e.target.value;
+                    if (v === '') return setNewProject({...newProject, progress: ''});
+                    if (/^\d{1,3}$/.test(v) && Number(v) <= 100) {
+                      setNewProject({...newProject, progress: String(Number(v))});
+                    }
+                  }}
+                  className={`${inputClass} flex-1 min-w-0`}
+                />
+              </label>
               <input
                 type="text"
                 inputMode="decimal"
