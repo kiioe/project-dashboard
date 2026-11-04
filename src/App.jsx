@@ -30,9 +30,23 @@ const parseMoney = (text) => {
   return t === '' ? 0 : Number(t);
 };
 
-// Whole amounts show without decimals; amounts with pence always show 2 decimals.
-const formatMoney = (n) =>
-  n.toLocaleString(undefined, Number.isInteger(n) ? {} : { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+// Currencies a project can use. Each project's money fields are in its own currency.
+const CURRENCIES = {
+  GBP: { symbol: '£', label: 'GBP (£)' },
+  EUR: { symbol: '€', label: 'EUR (€)' },
+  USD: { symbol: '$', label: 'USD ($)' }
+};
+const DEFAULT_CURRENCY = 'GBP';
+
+// Shows the currency symbol; whole amounts without decimals, amounts with pence always with 2.
+const formatMoney = (n, currency = DEFAULT_CURRENCY) =>
+  new Intl.NumberFormat('en-GB', {
+    style: 'currency',
+    currency,
+    currencyDisplay: 'narrowSymbol',
+    minimumFractionDigits: Number.isInteger(n) ? 0 : 2,
+    maximumFractionDigits: 2
+  }).format(n);
 
 const emptyProject = {
   name: '',
@@ -43,7 +57,8 @@ const emptyProject = {
   owner: '',
   budget: '',
   spent: '',
-  hourlyRate: 0
+  hourlyRate: 0,
+  currency: DEFAULT_CURRENCY
 };
 
 const ProjectDashboard = () => {
@@ -82,6 +97,7 @@ const ProjectDashboard = () => {
         ...p,
         budget: Number(p.budget),
         spent: Number(p.spent),
+        currency: CURRENCIES[p.currency] ? p.currency : DEFAULT_CURRENCY,
         startDate: p.start_date,
         endDate: p.end_date
       })));
@@ -103,16 +119,15 @@ const ProjectDashboard = () => {
   const [showAddForm, setShowAddForm] = useState(false);
   const [newProject, setNewProject] = useState(emptyProject);
   const [projectError, setProjectError] = useState('');
+  const [chartCurrency, setChartCurrency] = useState(DEFAULT_CURRENCY);
 
   const calculateMetrics = () => {
     const total = projects.length;
     const completed = projects.filter(p => p.status === 'Completed').length;
     const inProgress = projects.filter(p => p.status === 'In Progress').length;
-    const totalBudget = projects.reduce((sum, p) => sum + p.budget, 0);
-    const totalSpent = projects.reduce((sum, p) => sum + p.spent, 0);
     const avgProgress = total === 0 ? 0 : projects.reduce((sum, p) => sum + p.progress, 0) / total;
 
-    return { total, completed, inProgress, totalBudget, totalSpent, avgProgress };
+    return { total, completed, inProgress, avgProgress };
   };
 
   const metrics = calculateMetrics();
@@ -140,7 +155,8 @@ const ProjectDashboard = () => {
         owner: newProject.owner,
         budget,
         spent,
-        hourly_rate: newProject.hourlyRate
+        hourly_rate: newProject.hourlyRate,
+        currency: newProject.currency
       });
       if (error) {
         setProjectError('Could not save the project. Please try again.');
@@ -219,11 +235,12 @@ const ProjectDashboard = () => {
     return { left: `${startOffset}%`, width: `${duration}%` };
   };
 
-  const budgetData = projects.map(p => ({
-    name: p.name,
-    Budget: p.budget,
-    Spent: p.spent
-  }));
+  // The Budget Overview compares projects in one currency at a time, so amounts are never mixed.
+  const budgetData = projects
+    .filter(p => p.currency === chartCurrency)
+    .map(p => ({ name: p.name, Budget: p.budget, Spent: p.spent }));
+  const projectCountFor = (code) => projects.filter(p => p.currency === code).length;
+  const formSymbol = CURRENCIES[newProject.currency].symbol;
 
   const inputClass = "px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500";
 
@@ -351,10 +368,20 @@ const ProjectDashboard = () => {
                 onChange={(e) => setNewProject({...newProject, owner: e.target.value})}
                 className={inputClass}
               />
+              <select
+                aria-label="Currency"
+                value={newProject.currency}
+                onChange={(e) => setNewProject({...newProject, currency: e.target.value})}
+                className={inputClass}
+              >
+                {Object.entries(CURRENCIES).map(([code, c]) => (
+                  <option key={code} value={code}>Currency: {c.label}</option>
+                ))}
+              </select>
               <input
                 type="text"
                 inputMode="decimal"
-                placeholder="Budget (0 if free)"
+                placeholder={`Budget in ${formSymbol} (0 if free)`}
                 value={newProject.budget}
                 onChange={(e) => {
                   if (MONEY_TYPING.test(e.target.value)) setNewProject({...newProject, budget: e.target.value});
@@ -371,7 +398,7 @@ const ProjectDashboard = () => {
               <input
                 type="text"
                 inputMode="decimal"
-                placeholder="Amount Spent (0 if none)"
+                placeholder={`Amount Spent in ${formSymbol} (0 if none)`}
                 value={newProject.spent}
                 onChange={(e) => {
                   if (MONEY_TYPING.test(e.target.value)) setNewProject({...newProject, spent: e.target.value});
@@ -382,7 +409,7 @@ const ProjectDashboard = () => {
                 type="number"
                 min="0"
                 step="0.01"
-                placeholder="Hourly Rate (for time tracking)"
+                placeholder={`Hourly Rate in ${formSymbol} (for time tracking)`}
                 value={newProject.hourlyRate || ''}
                 onChange={(e) => setNewProject({...newProject, hourlyRate: Number(e.target.value)})}
                 className={inputClass}
@@ -452,18 +479,40 @@ const ProjectDashboard = () => {
 
         {/* Budget Chart */}
         <div className="bg-white p-6 rounded-xl shadow-md border border-slate-200 mb-8">
-          <h2 className="text-xl font-bold text-slate-800 mb-4">Budget Overview</h2>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={budgetData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="name" />
-              <YAxis />
-              <Tooltip />
-              <Legend />
-              <Bar dataKey="Budget" fill="#3b82f6" />
-              <Bar dataKey="Spent" fill="#10b981" />
-            </BarChart>
-          </ResponsiveContainer>
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+            <h2 className="text-xl font-bold text-slate-800">Budget Overview</h2>
+            <div className="flex gap-2" role="group" aria-label="Show projects in currency">
+              {Object.entries(CURRENCIES).map(([code, c]) => (
+                <button
+                  key={code}
+                  onClick={() => setChartCurrency(code)}
+                  aria-pressed={chartCurrency === code}
+                  className={`px-3 py-1 rounded-lg text-sm font-medium transition-colors ${
+                    chartCurrency === code
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  }`}
+                >
+                  {c.label} · {projectCountFor(code)}
+                </button>
+              ))}
+            </div>
+          </div>
+          {budgetData.length === 0 ? (
+            <p className="text-slate-500 text-sm">No projects in {chartCurrency} yet.</p>
+          ) : (
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={budgetData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="name" />
+                <YAxis width={80} tickFormatter={(v) => formatMoney(v, chartCurrency)} />
+                <Tooltip formatter={(v) => formatMoney(v, chartCurrency)} />
+                <Legend />
+                <Bar dataKey="Budget" fill="#3b82f6" />
+                <Bar dataKey="Spent" fill="#10b981" />
+              </BarChart>
+            </ResponsiveContainer>
+          )}
         </div>
 
         {/* Time Tracking (admins only) */}
@@ -603,7 +652,7 @@ const ProjectDashboard = () => {
                       </div>
                     </td>
                     <td className="py-3 px-4 text-sm text-slate-600">
-                      ${formatMoney(project.spent)} / ${formatMoney(project.budget)}
+                      {formatMoney(project.spent, project.currency)} / {formatMoney(project.budget, project.currency)}
                     </td>
                     {isAdmin && (
                       <td className="py-3 px-4">
