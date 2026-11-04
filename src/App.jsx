@@ -3,6 +3,8 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 import { Calendar, Plus, Trash2, TrendingUp, Clock, CheckCircle, AlertCircle } from 'lucide-react';
 import { SignedIn, SignedOut, SignInButton, UserButton, useUser, useSession, useOrganization, CreateOrganization, OrganizationSwitcher } from '@clerk/clerk-react';
 import { createClient } from '@supabase/supabase-js';
+import { MONEY_TYPING, parseMoney, CURRENCIES, DEFAULT_CURRENCY, formatMoney, sumMoney } from './money';
+import CostsPanel, { itemTotals } from './CostsPanel';
 
 function useSupabaseClient() {
   const { session } = useSession();
@@ -19,34 +21,6 @@ const todayStr = () => {
   return d.toISOString().slice(0, 10);
 };
 
-// Money amounts: 0 or more, up to 2 decimal places (pounds and pence).
-// What the field accepts while typing (allows a trailing "." mid-entry).
-const MONEY_TYPING = /^\d*(\.\d{0,2})?$/;
-
-// Turn the field's text into a number; blank counts as 0. Returns null if invalid.
-const parseMoney = (text) => {
-  const t = text.replace(/\.$/, '');
-  if (!/^\d*(\.\d{1,2})?$/.test(t)) return null;
-  return t === '' ? 0 : Number(t);
-};
-
-// Currencies a project can use. Each project's money fields are in its own currency.
-const CURRENCIES = {
-  GBP: { symbol: '£', label: 'GBP (£)' },
-  EUR: { symbol: '€', label: 'EUR (€)' },
-  USD: { symbol: '$', label: 'USD ($)' }
-};
-const DEFAULT_CURRENCY = 'GBP';
-
-// Shows the currency symbol; whole amounts without decimals, amounts with pence always with 2.
-const formatMoney = (n, currency = DEFAULT_CURRENCY) =>
-  new Intl.NumberFormat('en-GB', {
-    style: 'currency',
-    currency,
-    currencyDisplay: 'narrowSymbol',
-    minimumFractionDigits: Number.isInteger(n) ? 0 : 2,
-    maximumFractionDigits: 2
-  }).format(n);
 
 const emptyProject = {
   name: '',
@@ -77,9 +51,14 @@ const ProjectDashboard = () => {
     note: ''
   });
 
+  const [categories, setCategories] = useState([]);
+  const [costItems, setCostItems] = useState([]);
+  const [openCostsFor, setOpenCostsFor] = useState(null);
+
   useEffect(() => {
     if (organization) {
       fetchProjects();
+      fetchCosts();
       if (isAdmin) fetchTimeEntries();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -103,6 +82,23 @@ const ProjectDashboard = () => {
       })));
     }
     setLoading(false);
+  };
+
+  // Cost categories and items for every project in the organisation.
+  const fetchCosts = async () => {
+    const [cats, its] = await Promise.all([
+      supabase.from('project_categories').select('*').eq('org_id', organization.id).order('id', { ascending: true }),
+      supabase.from('cost_items').select('*').eq('org_id', organization.id).order('id', { ascending: true })
+    ]);
+    if (!cats.error) setCategories(cats.data.map(c => ({ ...c, budget: Number(c.budget) })));
+    if (!its.error) {
+      setCostItems(its.data.map(i => ({
+        ...i,
+        quantity: Number(i.quantity),
+        unit_cost: Number(i.unit_cost),
+        total: Number(i.total)
+      })));
+    }
   };
 
   const fetchTimeEntries = async () => {
@@ -241,10 +237,14 @@ const ProjectDashboard = () => {
     return { left: `${startOffset}%`, width: `${duration}%` };
   };
 
+  // A project's Amount Spent = what was entered on the project + its cost items marked Paid.
+  const itemsFor = (projectId) => costItems.filter(i => i.project_id === projectId);
+  const spentFor = (project) => sumMoney([project.spent, itemTotals(itemsFor(project.id)).paid]);
+
   // The Budget Overview compares projects in one currency at a time, so amounts are never mixed.
   const budgetData = projects
     .filter(p => p.currency === chartCurrency)
-    .map(p => ({ name: p.name, Budget: p.budget, Spent: p.spent }));
+    .map(p => ({ name: p.name, Budget: p.budget, Spent: spentFor(p) }));
   const projectCountFor = (code) => projects.filter(p => p.currency === code).length;
   const formSymbol = CURRENCIES[newProject.currency].symbol;
 
@@ -416,7 +416,7 @@ const ProjectDashboard = () => {
               <input
                 type="text"
                 inputMode="decimal"
-                placeholder={`Amount Spent in ${formSymbol} (0 if none)`}
+                placeholder={`Spent so far, not itemised, in ${formSymbol} (0 if none)`}
                 value={newProject.spent}
                 onChange={(e) => {
                   if (MONEY_TYPING.test(e.target.value)) setNewProject({...newProject, spent: e.target.value});
@@ -644,13 +644,15 @@ const ProjectDashboard = () => {
                   <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Owner</th>
                   <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Status</th>
                   <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Progress</th>
-                  <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Budget</th>
+                  <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Spent / Budget</th>
+                  <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Costs</th>
                   {isAdmin && <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Actions</th>}
                 </tr>
               </thead>
               <tbody>
                 {projects.map((project) => (
-                  <tr key={project.id} className="border-b border-slate-100 hover:bg-slate-50">
+                  <React.Fragment key={project.id}>
+                  <tr className="border-b border-slate-100 hover:bg-slate-50">
                     <td className="py-3 px-4 text-sm text-slate-800 font-medium">{project.name}</td>
                     <td className="py-3 px-4 text-sm text-slate-600">{project.owner}</td>
                     <td className="py-3 px-4">
@@ -670,7 +672,16 @@ const ProjectDashboard = () => {
                       </div>
                     </td>
                     <td className="py-3 px-4 text-sm text-slate-600">
-                      {formatMoney(project.spent, project.currency)} / {formatMoney(project.budget, project.currency)}
+                      {formatMoney(spentFor(project), project.currency)} / {formatMoney(project.budget, project.currency)}
+                    </td>
+                    <td className="py-3 px-4">
+                      <button
+                        onClick={() => setOpenCostsFor(openCostsFor === project.id ? null : project.id)}
+                        aria-expanded={openCostsFor === project.id}
+                        className="text-sm text-blue-700 hover:text-blue-900 whitespace-nowrap"
+                      >
+                        {openCostsFor === project.id ? 'Hide costs' : `Costs (${itemsFor(project.id).length})`}
+                      </button>
                     </td>
                     {isAdmin && (
                       <td className="py-3 px-4">
@@ -683,6 +694,22 @@ const ProjectDashboard = () => {
                       </td>
                     )}
                   </tr>
+                  {openCostsFor === project.id && (
+                    <tr className="border-b border-slate-100">
+                      <td colSpan={isAdmin ? 7 : 6} className="p-4">
+                        <CostsPanel
+                          project={project}
+                          categories={categories.filter(c => c.project_id === project.id)}
+                          items={itemsFor(project.id)}
+                          isAdmin={isAdmin}
+                          supabase={supabase}
+                          orgId={organization.id}
+                          onChanged={fetchCosts}
+                        />
+                      </td>
+                    </tr>
+                  )}
+                  </React.Fragment>
                 ))}
               </tbody>
             </table>
