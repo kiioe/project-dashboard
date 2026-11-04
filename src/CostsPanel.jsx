@@ -355,10 +355,27 @@ export default function CostsPanel({ project, categories, items, isAdmin, supaba
               <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-slate-100">
                 <h4 className="font-semibold text-slate-800">{category.name}</h4>
                 <div className="flex flex-wrap items-center gap-4 text-sm text-slate-600">
-                  <span>Budget <strong className="text-slate-800">{money(category.budget)}</strong></span>
+                  {category.budget > 0 ? (
+                    <span>Budget <strong className="text-slate-800">{money(category.budget)}</strong></span>
+                  ) : (
+                    // A £0 budget (e.g. a Staffing category created by billing) means "not set yet", not "overspent".
+                    <span className="flex items-center gap-2">
+                      Budget <strong className="text-slate-500 font-medium">No budget set</strong>
+                      {isAdmin && (
+                        <button
+                          onClick={() => { setError(''); setNotice(''); setEditingCategory({ id: category.id, name: category.name, budget: '' }); }}
+                          className="text-blue-700 hover:text-blue-900 underline"
+                        >
+                          Set budget
+                        </button>
+                      )}
+                    </span>
+                  )}
                   <span>Committed <strong className="text-slate-800">{money(t.committed)}</strong></span>
                   <span>Paid <strong className="text-slate-800">{money(t.paid)}</strong></span>
-                  <span>Left <strong className={catLeft < 0 ? 'text-red-700' : 'text-green-700'}>{money(catLeft)}</strong></span>
+                  {category.budget > 0 && (
+                    <span>Left <strong className={catLeft < 0 ? 'text-red-700' : 'text-green-700'}>{money(catLeft)}</strong></span>
+                  )}
                   {isAdmin && (
                     <span className="flex items-center gap-3">
                       <EditButton label={`Edit category ${category.name}`}
