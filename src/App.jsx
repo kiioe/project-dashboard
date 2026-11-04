@@ -26,7 +26,7 @@ const emptyProject = {
   startDate: '',
   endDate: '',
   owner: '',
-  budget: 0,
+  budget: '',
   spent: 0,
   hourlyRate: 0
 };
@@ -101,8 +101,10 @@ const ProjectDashboard = () => {
   const metrics = calculateMetrics();
 
   const addProject = async () => {
-    if (!Number.isInteger(newProject.budget) || newProject.budget <= 0) {
-      setProjectError('Budget must be a whole number greater than 0.');
+    // Budget is a whole number of 0 or more; a blank budget counts as 0 (free).
+    const budget = newProject.budget === '' ? 0 : Number(newProject.budget);
+    if (!Number.isInteger(budget) || budget < 0) {
+      setProjectError('Budget must be a whole number of 0 or more.');
       return;
     }
     if (newProject.name && newProject.startDate && newProject.endDate) {
@@ -114,7 +116,7 @@ const ProjectDashboard = () => {
         start_date: newProject.startDate,
         end_date: newProject.endDate,
         owner: newProject.owner,
-        budget: newProject.budget,
+        budget,
         spent: newProject.spent,
         hourly_rate: newProject.hourlyRate
       });
@@ -329,15 +331,15 @@ const ProjectDashboard = () => {
               />
               <input
                 type="number"
-                min="1"
+                min="0"
                 step="1"
                 inputMode="numeric"
-                placeholder="Budget"
-                value={newProject.budget || ''}
+                placeholder="Budget (0 if free)"
+                value={newProject.budget}
                 onKeyDown={(e) => { if (['-', '+', '.', ',', 'e', 'E'].includes(e.key)) e.preventDefault(); }}
                 onChange={(e) => {
                   const v = e.target.value;
-                  if (v === '' || /^\d+$/.test(v)) setNewProject({...newProject, budget: Number(v)});
+                  if (v === '' || /^\d+$/.test(v)) setNewProject({...newProject, budget: v});
                 }}
                 className={inputClass}
               />
