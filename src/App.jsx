@@ -582,7 +582,7 @@ const ProjectDashboard = () => {
                       </div>
                     </td>
                     <td className="py-3 px-4 text-sm text-slate-600">
-                      ${project.spent.toLocaleString()} / ${project.budget.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                      ${project.spent.toLocaleString()} / ${project.budget.toLocaleString(undefined, Number.isInteger(project.budget) ? {} : { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </td>
                     {isAdmin && (
                       <td className="py-3 px-4">
