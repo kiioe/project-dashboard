@@ -116,6 +116,8 @@ const ProjectDashboard = () => {
   const [newProject, setNewProject] = useState(emptyProject);
   const [projectError, setProjectError] = useState('');
   const [editingId, setEditingId] = useState(null); // null = adding a new project
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null); // project waiting for delete confirmation
+  const [deleteError, setDeleteError] = useState('');
   const [chartCurrency, setChartCurrency] = useState(DEFAULT_CURRENCY);
 
   const calculateMetrics = () => {
@@ -216,9 +218,19 @@ const ProjectDashboard = () => {
     fetchProjects();
   };
 
+  // Deleting a project also deletes its cost categories and items, so it's confirmed first.
   const deleteProject = async (id) => {
     const { error } = await supabase.from('projects').delete().eq('id', id);
-    if (!error) fetchProjects();
+    if (error) {
+      setDeleteError('Could not delete the project. Please try again.');
+      return;
+    }
+    setConfirmDeleteId(null);
+    setDeleteError('');
+    if (editingId === id) closeProjectForm();
+    if (openCostsFor === id) setOpenCostsFor(null);
+    fetchProjects();
+    fetchCosts();
   };
 
   const addTimeEntry = async () => {
@@ -737,24 +749,49 @@ const ProjectDashboard = () => {
                     </td>
                     {isAdmin && (
                       <td className="py-3 px-4">
-                        <div className="flex items-center gap-3">
-                          <button
-                            onClick={() => startEditing(project)}
-                            aria-label={`Edit ${project.name}`}
-                            title="Edit project"
-                            className="text-blue-600 hover:text-blue-800 transition-colors"
-                          >
-                            <Pencil size={18} />
-                          </button>
-                          <button
-                            onClick={() => deleteProject(project.id)}
-                            aria-label={`Delete ${project.name}`}
-                            title="Delete project"
-                            className="text-red-600 hover:text-red-800 transition-colors"
-                          >
-                            <Trash2 size={18} />
-                          </button>
-                        </div>
+                        {confirmDeleteId === project.id ? (
+                          <div className="text-sm min-w-[12rem]" role="alert">
+                            <p className="text-slate-700 mb-1">
+                              Delete <strong>{project.name}</strong>
+                              {itemsFor(project.id).length > 0 || categories.some(c => c.project_id === project.id)
+                                ? ' and all its costs' : ''}? This can’t be undone.
+                            </p>
+                            <div className="flex items-center gap-3">
+                              <button
+                                onClick={() => deleteProject(project.id)}
+                                className="text-red-700 font-semibold hover:underline"
+                              >
+                                Delete
+                              </button>
+                              <button
+                                onClick={() => { setConfirmDeleteId(null); setDeleteError(''); }}
+                                className="text-slate-600 hover:underline"
+                              >
+                                Keep
+                              </button>
+                            </div>
+                            {deleteError && <p className="text-red-600 text-xs mt-1">{deleteError}</p>}
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-3">
+                            <button
+                              onClick={() => startEditing(project)}
+                              aria-label={`Edit ${project.name}`}
+                              title="Edit project"
+                              className="text-blue-600 hover:text-blue-800 transition-colors"
+                            >
+                              <Pencil size={18} />
+                            </button>
+                            <button
+                              onClick={() => { setConfirmDeleteId(project.id); setDeleteError(''); }}
+                              aria-label={`Delete ${project.name}`}
+                              title="Delete project"
+                              className="text-red-600 hover:text-red-800 transition-colors"
+                            >
+                              <Trash2 size={18} />
+                            </button>
+                          </div>
+                        )}
                       </td>
                     )}
                   </tr>
