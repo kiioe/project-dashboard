@@ -29,3 +29,15 @@ export const formatMoney = (n, currency = DEFAULT_CURRENCY) =>
 
 // Adds up amounts without floating-point drift (works in pence).
 export const sumMoney = (values) => values.reduce((sum, v) => sum + Math.round(Number(v) * 100), 0) / 100;
+
+// Logged hours: more than 0 and at most 24, up to 2 decimal places (e.g. 1.5, 0.25, 7.75).
+// What an hours field accepts while typing (allows a trailing "." mid-entry).
+export const HOURS_TYPING = /^\d{0,2}(\.\d{0,2})?$/;
+
+// Turn an hours field's text into a number. Returns null if blank, 0, over 24 or badly formed.
+export const parseHours = (text) => {
+  const t = String(text).replace(/\.$/, '');
+  if (!/^(\d{1,2}(\.\d{1,2})?|\.\d{1,2})$/.test(t)) return null;
+  const hours = Number(t);
+  return hours > 0 && hours <= 24 ? hours : null;
+};
