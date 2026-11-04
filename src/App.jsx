@@ -31,7 +31,7 @@ const emptyProject = {
   owner: '',
   budget: '',
   spent: '',
-  hourlyRate: 0,
+  hourlyRate: '',
   currency: DEFAULT_CURRENCY
 };
 
@@ -107,7 +107,8 @@ const ProjectDashboard = () => {
   const fetchUnbilledTime = async () => {
     const { data, error } = await supabase
       .from('time_entries')
-      .select('id, project_id, hours, hourly_rate, entry_date')
+      .select('id, project_id, hours, hourly_rate, entry_date, note')
+      .order('entry_date', { ascending: true })
       .eq('org_id', organization.id)
       .is('cost_item_id', null);
     if (!error) {
@@ -115,9 +116,15 @@ const ProjectDashboard = () => {
     }
   };
 
-  // Turns a project's unbilled hours into cost items in the chosen category (done by the database in one step).
-  const billLoggedTime = async (categoryId, status) => {
-    const { error } = await supabase.rpc('bill_logged_time', { p_category_id: categoryId, p_status: status });
+  // Turns chosen unbilled hours into a cost item (done by the database in one step).
+  // With no category chosen, the database uses the project's Staffing category, creating it if needed.
+  const billLoggedTime = async ({ projectId, entryIds, categoryId, status }) => {
+    const { error } = await supabase.rpc('bill_logged_time', {
+      p_project_id: projectId,
+      p_entry_ids: entryIds,
+      p_category_id: categoryId,
+      p_status: status
+    });
     await Promise.all([fetchCosts(), fetchTimeEntries()]);
     return error ? (error.message || 'Could not bill the logged time. Please try again.') : null;
   };
@@ -185,7 +192,7 @@ const ProjectDashboard = () => {
       owner: project.owner || '',
       budget: String(project.budget),
       spent: String(project.spent),
-      hourlyRate: Number(project.hourly_rate) || 0,
+      hourlyRate: Number(project.hourly_rate) ? String(Number(project.hourly_rate)) : '',
       currency: project.currency
     });
     setProjectError('');
@@ -216,6 +223,11 @@ const ProjectDashboard = () => {
       setProjectError('Amount Spent must be 0 or more, with up to 2 decimal places.');
       return;
     }
+    const hourlyRate = parseMoney(newProject.hourlyRate);
+    if (hourlyRate === null) {
+      setProjectError('Hourly Rate must be 0 or more, with up to 2 decimal places.');
+      return;
+    }
     // Progress: a whole number from 0 to 100; blank counts as 0.
     const progress = newProject.progress === '' ? 0 : Number(newProject.progress);
     if (!Number.isInteger(progress) || progress < 0 || progress > 100) {
@@ -231,7 +243,7 @@ const ProjectDashboard = () => {
       owner: newProject.owner,
       budget,
       spent,
-      hourly_rate: newProject.hourlyRate,
+      hourly_rate: hourlyRate,
       currency: newProject.currency
     };
     const { error } = editingId === null
@@ -516,12 +528,13 @@ const ProjectDashboard = () => {
                 className={inputClass}
               />
               <input
-                type="number"
-                min="0"
-                step="0.01"
+                type="text"
+                inputMode="decimal"
                 placeholder={`Hourly Rate in ${formSymbol} (for time tracking)`}
-                value={newProject.hourlyRate || ''}
-                onChange={(e) => setNewProject({...newProject, hourlyRate: Number(e.target.value)})}
+                value={newProject.hourlyRate}
+                onChange={(e) => {
+                  if (MONEY_TYPING.test(e.target.value)) setNewProject({...newProject, hourlyRate: e.target.value});
+                }}
                 className={inputClass}
               />
             </div>
