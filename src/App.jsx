@@ -65,6 +65,7 @@ const ProjectDashboard = () => {
     if (!error) {
       setProjects(data.map(p => ({
         ...p,
+        budget: Number(p.budget),
         startDate: p.start_date,
         endDate: p.end_date
       })));
@@ -101,10 +102,11 @@ const ProjectDashboard = () => {
   const metrics = calculateMetrics();
 
   const addProject = async () => {
-    // Budget is a whole number of 0 or more; a blank budget counts as 0 (free).
-    const budget = newProject.budget === '' ? 0 : Number(newProject.budget);
-    if (!Number.isInteger(budget) || budget < 0) {
-      setProjectError('Budget must be a whole number of 0 or more.');
+    // Budget is 0 or more with up to 2 decimal places; a blank budget counts as 0 (free).
+    const budgetText = newProject.budget.replace(/\.$/, '');
+    const budget = budgetText === '' ? 0 : Number(budgetText);
+    if (!/^\d*(\.\d{1,2})?$/.test(budgetText) || !Number.isFinite(budget) || budget < 0) {
+      setProjectError('Budget must be 0 or more, with up to 2 decimal places.');
       return;
     }
     if (newProject.name && newProject.startDate && newProject.endDate) {
@@ -330,16 +332,14 @@ const ProjectDashboard = () => {
                 className={inputClass}
               />
               <input
-                type="number"
-                min="0"
-                step="1"
-                inputMode="numeric"
+                type="text"
+                inputMode="decimal"
                 placeholder="Budget (0 if free)"
                 value={newProject.budget}
-                onKeyDown={(e) => { if (['-', '+', '.', ',', 'e', 'E'].includes(e.key)) e.preventDefault(); }}
                 onChange={(e) => {
+                  // Digits with at most one decimal point and up to 2 decimal places
                   const v = e.target.value;
-                  if (v === '' || /^\d+$/.test(v)) setNewProject({...newProject, budget: v});
+                  if (/^\d*(\.\d{0,2})?$/.test(v)) setNewProject({...newProject, budget: v});
                 }}
                 className={inputClass}
               />
@@ -582,7 +582,7 @@ const ProjectDashboard = () => {
                       </div>
                     </td>
                     <td className="py-3 px-4 text-sm text-slate-600">
-                      ${project.spent.toLocaleString()} / ${project.budget.toLocaleString()}
+                      ${project.spent.toLocaleString()} / ${project.budget.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                     </td>
                     {isAdmin && (
                       <td className="py-3 px-4">
