@@ -27,6 +27,16 @@ export const formatMoney = (n, currency = DEFAULT_CURRENCY) =>
     maximumFractionDigits: 2
   }).format(n);
 
+// Always shows pence (e.g. £3,420.00), as invoices usually do.
+export const formatMoneyFixed = (n, currency = DEFAULT_CURRENCY) =>
+  new Intl.NumberFormat('en-GB', {
+    style: 'currency',
+    currency,
+    currencyDisplay: 'narrowSymbol',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(n);
+
 // Adds up amounts without floating-point drift (works in pence).
 export const sumMoney = (values) => values.reduce((sum, v) => sum + Math.round(Number(v) * 100), 0) / 100;
 

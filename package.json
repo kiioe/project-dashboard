@@ -12,7 +12,9 @@
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "recharts": "^2.5.0",
-    "lucide-react": "^0.263.1"
+    "lucide-react": "^0.263.1",
+    "jspdf": "^2.5.1",
+    "jspdf-autotable": "^3.8.2"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.0.0",

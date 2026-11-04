@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, Trash2, Pencil, Clock } from 'lucide-react';
+import { Plus, Trash2, Pencil, Clock, FileText } from 'lucide-react';
 import { MONEY_TYPING, parseMoney, CURRENCIES, formatMoney, sumMoney } from './money';
 
 export const ITEM_STATUSES = ['Quoted', 'Booked', 'Invoiced', 'Paid'];
@@ -84,7 +84,7 @@ function ItemFields({ draft, onChange, symbol, onSave, onCancel, saveLabel }) {
 
 // Shows one project's cost categories and the items inside them.
 // Everyone in the organisation can view; only admins can add, change or delete.
-export default function CostsPanel({ project, categories, items, isAdmin, supabase, orgId, onChanged, unbilledTime = [], onBillTime }) {
+export default function CostsPanel({ project, categories, items, isAdmin, supabase, orgId, onChanged, unbilledTime = [], onBillTime, onCreateInvoice }) {
   const money = (n) => formatMoney(n, project.currency);
   const symbol = CURRENCIES[project.currency].symbol;
   const [error, setError] = useState('');
@@ -237,6 +237,15 @@ export default function CostsPanel({ project, categories, items, isAdmin, supaba
         <Stat label="Paid" value={money(projectTotals.paid)} />
         <Stat label="Left in budget" value={money(remaining)} tone={remaining < 0 ? 'text-red-700' : 'text-green-700'} />
       </div>
+      {isAdmin && onCreateInvoice && (
+        <div className="flex justify-end">
+          <button onClick={onCreateInvoice} disabled={items.length === 0}
+            title={items.length === 0 ? 'Add cost items first' : 'Create a PDF invoice from these items'}
+            className="flex items-center gap-2 bg-white border border-blue-300 text-blue-700 px-4 py-2 rounded-lg text-sm hover:bg-blue-50 disabled:opacity-50">
+            <FileText size={16} /> Create invoice
+          </button>
+        </div>
+      )}
       {allocated > project.budget && (
         <p className="text-amber-700 text-sm">The category budgets add up to more than the project budget.</p>
       )}
