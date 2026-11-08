@@ -9,6 +9,7 @@ The to-do list is in `ROADMAP.md`. Keep it up to date.
   Live app: https://project-dashboard-wczx.vercel.app
 - **Clerk** for sign-in and organisations. Roles: organisation admins and members.
 - **Supabase** (Postgres) for data, with Clerk as a third-party auth provider. All access is controlled by row-level security.
+- **Libraries** are locked by `package-lock.json` and built with **Node 22** (`engines` in `package.json`). Vercel installs exactly the locked versions.
 - **Tailwind** is currently loaded from the CDN in `index.html`; installing it properly is on the roadmap.
 
 ## Code map
@@ -28,6 +29,7 @@ The to-do list is in `ROADMAP.md`. Keep it up to date.
 - **Batch related changes:** one SQL step, one pull request, one check.
 - **Check in proportion to risk.** Test properly anything touching money, permissions or data; low-risk changes can be merged for E to check.
 - **Database changes:** put them in a new `supabase/*.sql` file in the same pull request. E runs the SQL first, then the pull request is merged. E has given standing approval to merge once the SQL has run (or straight away if there is none).
+- **Libraries:** add or upgrade them with `npm install <name>@<version>` and commit the updated `package-lock.json` in the same pull request. Never delete the lock file to fix an install; upgrades are their own roadmap item, not a side effect. `.gitignore` keeps out `node_modules/`, `dist/` and `.env*` files; never commit keys.
 - **At the end of a session**, update `ROADMAP.md` (and the Decisions below if any changed).
 
 ## Keep-alive watch list
