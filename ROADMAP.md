@@ -6,7 +6,7 @@ The same list lives in the claude.ai Project ("SEQNCE / SEQUENCE v1", `claude/se
 ## 1. Before real customers use it
 
 - [ ] **Upgrade Supabase to Pro shortly before launch** (no pausing, daily backups), then delete `.github/workflows/keep-alive.yml`. Until then the workflow keeps the free project awake.
-- [ ] **Move Clerk to a production instance.** At the same time, switch from the deprecated `@clerk/clerk-react` to `@clerk/react`. Then update the Clerk domain in Supabase → Authentication → Third-Party Auth (currently `sought-quail-4553.clerk.accounts.dev`) and the Clerk keys in Vercel.
+- [ ] **Move Clerk to a production instance.** At the same time, switch from the deprecated `@clerk/clerk-react` to `@clerk/react`. Then update the Clerk domain in Supabase → Authentication → Third-Party Auth (currently `sought-quail-4553.clerk.accounts.dev`) and the Clerk keys in Vercel. Users can't move between Clerk instances, so everyone signs up again, and existing projects (tied to the current Clerk organisation) need moving to the new production organisation; plan that step first.
 - [ ] **Shorten the lockout after failed sign-ins.** In Clerk → Protections → user lockout, shorten how long an account stays locked after too many failed sign-in attempts (Clerk's default is 1 hour) and check the attempt limit (10 on new instances; older instances may still allow 100). Not about how long people stay signed in. Set it on the production instance, since settings don't carry over from development.
 - [ ] **Install Tailwind properly** (PostCSS/CLI in the Vite build) and remove the CDN script from `index.html`.
 - [ ] **A test copy of the app.** Separate Supabase project + Vercel previews; turn `supabase/` files into Supabase migrations.
