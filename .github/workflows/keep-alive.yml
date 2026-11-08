@@ -3,6 +3,7 @@ name: Keep database awake
 # Supabase's free plan pauses a project after 7 days without activity.
 # This calls the keep_alive() database function every 3 days so that never happens.
 # Remove this workflow once the project is on Supabase Pro (Pro projects never pause).
+# What could stop it, and what to update, is listed in CLAUDE.md under "Keep-alive watch list".
 
 on:
   schedule:
@@ -36,11 +37,17 @@ jobs:
             status=$(echo "$response" | tail -n1)
             body=$(echo "$response" | sed '$d')
             echo "Attempt $attempt: HTTP $status $body"
-            if [ "$status" = "200" ] && [ "$body" = '"ok"' ]; then
-              echo "Database is awake."
-              exit 0
-            fi
+            case "$status" in
+              200)
+                if [ "$body" = '"ok"' ]; then echo "Database is awake."; exit 0; fi ;;
+              401|403)
+                echo "::error::Supabase rejected the key. Update the SUPABASE_ANON_KEY secret with the project's anon or publishable key (it may have been rotated)."
+                exit 1 ;;
+              404)
+                echo "::error::keep_alive() was not found. Run supabase/keep-alive.sql in this Supabase project, or check SUPABASE_URL points at the right project."
+                exit 1 ;;
+            esac
             sleep 20
           done
-          echo "::error::keep_alive() did not answer. Check the Supabase dashboard: the project may be paused."
+          echo "::error::No answer from Supabase. The project may be paused (restore it in the Supabase dashboard), or SUPABASE_URL may be wrong."
           exit 1
