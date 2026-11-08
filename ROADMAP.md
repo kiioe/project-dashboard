@@ -7,6 +7,7 @@ The same list lives in the claude.ai Project ("SEQNCE / SEQUENCE v1", `claude/se
 
 - [ ] **Upgrade Supabase to Pro shortly before launch** (no pausing, daily backups), then delete `.github/workflows/keep-alive.yml`. Until then the workflow keeps the free project awake.
 - [ ] **Move Clerk to a production instance.** At the same time, switch from the deprecated `@clerk/clerk-react` to `@clerk/react`. Then update the Clerk domain in Supabase → Authentication → Third-Party Auth (currently `sought-quail-4553.clerk.accounts.dev`) and the Clerk keys in Vercel.
+- [ ] **Shorten login timeouts.** In Clerk → Sessions, set a shorter maximum session lifetime and an inactivity timeout (Clerk's default keeps people signed in for 7 days). Best done on the production instance, since settings don't carry over from development.
 - [ ] **Install Tailwind properly** (PostCSS/CLI in the Vite build) and remove the CDN script from `index.html`.
 - [ ] **A test copy of the app.** Separate Supabase project + Vercel previews; turn `supabase/` files into Supabase migrations.
 
