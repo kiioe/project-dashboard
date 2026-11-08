@@ -1,0 +1,23 @@
+# Installed libraries (rebuilt from package-lock.json)
+node_modules/
+
+# Build output
+dist/
+
+# Keys and local settings: never commit these
+.env
+.env.*
+!.env.example
+
+# Vercel CLI local link
+.vercel/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS and editor clutter
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

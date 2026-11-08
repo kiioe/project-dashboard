@@ -1,6 +1,9 @@
 {
   "name": "project-dashboard",
   "version": "1.0.0",
+  "engines": {
+    "node": "22.x"
+  },
   "scripts": {
     "dev": "vite",
     "build": "vite build",
