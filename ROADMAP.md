@@ -6,6 +6,11 @@ The same list lives in the claude.ai Project ("SEQNCE / SEQUENCE v1", `claude/se
 ## 1. Before real customers use it
 
 - [ ] **Upgrade Supabase to Pro shortly before launch** (no pausing, daily backups), then delete `.github/workflows/keep-alive.yml`. Until then the workflow keeps the free project awake.
+- [ ] **Before moving Clerk to production (do these first, in order):**
+  1. **Choose and buy a domain.** `sequence.co.uk` is already registered and in use by another business, so pick an alternative (check it's free at a registrar and do a quick trademark search on the name).
+  2. **Decide what happens to existing data.** Today there's only a test project, so starting fresh on production may be simplest.
+  3. **Check whether Google (or other social) sign-in is used.** If so, create our own Google sign-in keys (Google Cloud Console), as Clerk's shared ones don't work in production.
+  4. **Have the logins ready** in the browser pane: the domain registrar (to add DNS records), Clerk, Vercel and Supabase.
 - [ ] **Move Clerk to a production instance.** At the same time, switch from the deprecated `@clerk/clerk-react` to `@clerk/react`. Then update the Clerk domain in Supabase → Authentication → Third-Party Auth (currently `sought-quail-4553.clerk.accounts.dev`) and the Clerk keys in Vercel. Users can't move between Clerk instances, so everyone signs up again, and existing projects (tied to the current Clerk organisation) need moving to the new production organisation; plan that step first.
 - [ ] **Shorten the lockout after failed sign-ins.** In Clerk → Protections → user lockout, shorten how long an account stays locked after too many failed sign-in attempts (Clerk's default is 1 hour) and check the attempt limit (10 on new instances; older instances may still allow 100). Not about how long people stay signed in. Set it on the production instance, since settings don't carry over from development.
 - [ ] **Install Tailwind properly** (PostCSS/CLI in the Vite build) and remove the CDN script from `index.html`.
