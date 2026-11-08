@@ -5,7 +5,7 @@ The same list lives in the claude.ai Project ("SEQNCE / SEQUENCE v1", `claude/se
 
 ## 1. Before real customers use it
 
-- [ ] **Stop the database going to sleep.** Supabase's free plan pauses a project after about a week without use (the cause of the original "can't save" outage). Upgrade before launch, or keep it active.
+- [ ] **Upgrade Supabase to Pro shortly before launch** (no pausing, daily backups), then delete `.github/workflows/keep-alive.yml`. Until then the workflow keeps the free project awake.
 - [ ] **Commit a lock file and `.gitignore`.** No `package-lock.json` yet, so each deploy can install different library versions.
 - [ ] **Move Clerk to a production instance.** Then update the Clerk domain in Supabase → Authentication → Third-Party Auth (currently `sought-quail-4553.clerk.accounts.dev`) and the Clerk keys in Vercel.
 - [ ] **Install Tailwind properly** (PostCSS/CLI in the Vite build) and remove the CDN script from `index.html`.
