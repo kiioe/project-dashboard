@@ -25,11 +25,12 @@ jobs:
             echo "::error::Add the SUPABASE_URL and SUPABASE_ANON_KEY repository secrets."
             exit 1
           fi
+          # Only the apikey header: it works for both the legacy anon key and the newer
+          # sb_publishable_ keys (sending a publishable key as a Bearer token is rejected).
           for attempt in 1 2 3; do
             response=$(curl -sS --max-time 30 -w '\n%{http_code}' -X POST \
               "${SUPABASE_URL%/}/rest/v1/rpc/keep_alive" \
               -H "apikey: $SUPABASE_ANON_KEY" \
-              -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
               -H "Content-Type: application/json" \
               -d '{}') || response=$'\n000'
             status=$(echo "$response" | tail -n1)
