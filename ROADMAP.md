@@ -7,12 +7,15 @@ The same list lives in the claude.ai Project ("SEQNCE / SEQUENCE v1", `claude/se
 
 - [ ] **Upgrade Supabase to Pro shortly before launch** (no pausing, daily backups), then delete `.github/workflows/keep-alive.yml`. Until then the workflow keeps the free project awake.
 - [ ] **Before moving Clerk to production (do these first, in order):**
-  1. ~~**Choose and buy a domain.**~~ Done 15 Nov 2026: `sqnce.co.uk` (main address) and `sequenceevents.co.uk` registered at Cloudflare for one year with auto-renew, registrant details private, DNSSEC switched on. (`sequence.co.uk` belongs to another business.)
+  1. ~~**Choose and buy a domain.**~~ Done 15 Nov 2026: `sqnce.co.uk` (main address) and `sequenceevents.co.uk` registered at Cloudflare for one year with auto-renew, registrant details private, DNSSEC active. (`sequence.co.uk` belongs to another business.) Pointed at the app on 15 Nov.
   2. **Decide what happens to existing data.** Today there's only a test project, so starting fresh on production may be simplest.
   3. **Check whether Google (or other social) sign-in is used.** If so, create our own Google sign-in keys (Google Cloud Console), as Clerk's shared ones don't work in production.
   4. **Have the logins ready** in the browser pane: Cloudflare (the domain registrar, to add DNS records), Clerk, Vercel and Supabase.
 - [ ] **Move Clerk to a production instance.** At the same time, switch from the deprecated `@clerk/clerk-react` to `@clerk/react`. Then update the Clerk domain in Supabase → Authentication → Third-Party Auth (currently `sought-quail-4553.clerk.accounts.dev`) and the Clerk keys in Vercel. Users can't move between Clerk instances, so everyone signs up again, and existing projects (tied to the current Clerk organisation) need moving to the new production organisation; plan that step first.
-- [ ] **Point the domains at the app.** `sqnce.co.uk` as the app's address in Vercel (DNS records added in Cloudflare), and `sequenceevents.co.uk` redirecting to it. Fits with the Clerk production move, which needs DNS records on the same domain.
+- [ ] **Find out why the free database paused on 15 Nov** although the keep-alive job last succeeded on 13 Nov. Check Supabase's pause email for the date and reason; if its inactivity rules changed, run the job more often or bring the Pro upgrade forward. (Resumed 15 Nov; data intact.)
+- [ ] **At the Clerk production move, also:** add "never sends email" records to `sequenceevents.co.uk` (SPF `v=spf1 -all` + DMARC `p=reject`), and decide `sqnce.co.uk`'s email records alongside Clerk's.
+- [ ] **Redirect the old address** `project-dashboard-wczx.vercel.app` to `sqnce.co.uk` once nothing relies on it.
+- [ ] **Watch for Cloudflare's registrant-check email** for both domains (Nominet shows name and address "awaiting validation"); unvalidated .uk domains can be suspended.
 - [ ] **Shorten the lockout after failed sign-ins.** In Clerk → Protections → user lockout, shorten how long an account stays locked after too many failed sign-in attempts (Clerk's default is 1 hour) and check the attempt limit (10 on new instances; older instances may still allow 100). Not about how long people stay signed in. Set it on the production instance, since settings don't carry over from development.
 - [ ] **Install Tailwind properly** (PostCSS/CLI in the Vite build) and remove the CDN script from `index.html`.
 - [ ] **A test copy of the app.** Separate Supabase project + Vercel previews; turn `supabase/` files into Supabase migrations.
@@ -24,6 +27,7 @@ The same list lives in the claude.ai Project ("SEQNCE / SEQUENCE v1", `claude/se
 - [ ] **Delete redundant code:** unused code; the second Vercel project (`project-dashboard`) if not needed; `supabase/bill-logged-time.sql` (superseded by `billing-v2.sql`); old merged branches.
 - [ ] **Library upgrades:** Recharts 2 → 3 (2.x no longer maintained); Vite 4 → current.
 - [ ] **Time Tracking paging/filters** (the list shows only the latest 50 entries).
+- [ ] Idea: **page addresses inside the app** (e.g. `/projects/123`), so links can be shared. Today everything lives at `/`; any other path is a 404.
 
 ## 3. Useful for planners
 
