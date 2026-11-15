@@ -6,7 +6,7 @@ The to-do list is in `ROADMAP.md`. Keep it up to date.
 ## Stack
 
 - **React + Vite**, deployed on **Vercel** (`project-dashboard-wczx`). Merging to `main` deploys automatically.
-  Live app: https://project-dashboard-wczx.vercel.app
+  Live app: https://sqnce.co.uk (main address). `www.sqnce.co.uk`, `sequenceevents.co.uk` and `www.sequenceevents.co.uk` 308-redirect to it (set in Vercel → Domains; Cloudflare holds CNAMEs to Vercel, proxy off). The old `project-dashboard-wczx.vercel.app` still works.
 - **Clerk** for sign-in and organisations. Roles: organisation admins and members.
 - **Supabase** (Postgres) for data, with Clerk as a third-party auth provider. All access is controlled by row-level security.
 - **Libraries** are locked by `package-lock.json` and built with **Node 22** (`engines` in `package.json`). Vercel installs exactly the locked versions.
