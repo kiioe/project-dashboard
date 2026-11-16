@@ -6,6 +6,7 @@ The same list lives in the claude.ai Project ("SEQNCE / SEQUENCE v1", `claude/se
 ## 1. Before real customers use it
 
 - [ ] **Upgrade Supabase to Pro shortly before launch** (no pausing, daily backups), then delete `.github/workflows/keep-alive.yml`. Until then the workflow keeps the free project awake.
+- [ ] **Choose the hosting plan before the first paying customer.** Vercel's free Hobby plan is non-commercial only; a paid product needs Vercel Pro ($20/month per seat) or moving the app's hosting to Cloudflare (commercial use allowed free; data and sign-in stay on Supabase and Clerk). Check which Vercel plan the project is on first. See "When to consider Cloudflare".
 - [ ] **Before moving Clerk to production (do these first, in order):**
   1. ~~**Choose and buy a domain.**~~ Done 15 Nov 2026: `sqnce.co.uk` (main address) and `sequenceevents.co.uk` registered at Cloudflare for one year with auto-renew, registrant details private, DNSSEC active. (`sequence.co.uk` belongs to another business.) Pointed at the app on 15 Nov.
   2. **Decide what happens to existing data.** Today there's only a test project, so starting fresh on production may be simplest.
@@ -36,3 +37,10 @@ The same list lives in the claude.ai Project ("SEQNCE / SEQUENCE v1", `claude/se
 - [ ] **Client side of money:** markup or client price per item (invoices are at cost today), "billable to client" flag, record of issued invoices.
 - [ ] **Phone layout** for on-site use.
 - [ ] Smaller: attach a receipt/invoice file to a cost item.
+
+## When to consider Cloudflare
+
+Decided 16 Nov 2026: stay on Supabase for the database (row-level security + Clerk link + ready-made API; Cloudflare D1 is SQLite with none of these, so moving means rewriting the database functions and writing and securing our own API).
+
+- **Hosting only (small move):** when the first paying customer is near and we're on Vercel Hobby, or Vercel's bill grows.
+- **Database too (big move):** only if Supabase's bill grows well beyond Pro (roughly £100+/month), its prices, terms or reliability get worse, a developer joins who can own a backend API, or many customers are far from the UK.
