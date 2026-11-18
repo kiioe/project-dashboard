@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { Calendar, Plus, Trash2, Pencil, TrendingUp, Clock, CheckCircle, AlertCircle } from 'lucide-react';
-import { SignedIn, SignedOut, SignInButton, UserButton, useUser, useSession, useOrganization, CreateOrganization, OrganizationSwitcher } from '@clerk/clerk-react';
+import { Show, SignInButton, UserButton, useUser, useSession, useOrganization, CreateOrganization, OrganizationSwitcher } from '@clerk/react';
 import { createClient } from '@supabase/supabase-js';
 import { MONEY_TYPING, parseMoney, CURRENCIES, DEFAULT_CURRENCY, formatMoney, sumMoney, HOURS_TYPING, parseHours } from './money';
 import CostsPanel, { itemTotals } from './CostsPanel';
@@ -407,7 +407,7 @@ const ProjectDashboard = () => {
 
   return (
     <>
-      <SignedOut>
+      <Show when="signed-out">
         <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center p-8">
           <div className="bg-white p-10 rounded-xl shadow-md border border-slate-200 text-center max-w-sm">
             <h1 className="text-2xl font-bold text-slate-800 mb-2">Project Dashboard</h1>
@@ -419,8 +419,8 @@ const ProjectDashboard = () => {
             </SignInButton>
           </div>
         </div>
-      </SignedOut>
-      <SignedIn>
+      </Show>
+      <Show when="signed-in">
       {!organization ? (
         <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center p-8">
           <div className="bg-white p-10 rounded-xl shadow-md border border-slate-200 text-center">
@@ -1016,7 +1016,7 @@ const ProjectDashboard = () => {
       )}
     </div>
       )}
-      </SignedIn>
+      </Show>
     </>
   );
 };

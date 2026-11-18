@@ -10,14 +10,14 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@clerk/clerk-react": "^5.0.0",
+    "@clerk/react": "^6.19.1",
     "@supabase/supabase-js": "^2.45.0",
+    "jspdf": "^2.5.1",
+    "jspdf-autotable": "^3.8.2",
+    "lucide-react": "^0.263.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "recharts": "^2.5.0",
-    "lucide-react": "^0.263.1",
-    "jspdf": "^2.5.1",
-    "jspdf-autotable": "^3.8.2"
+    "recharts": "^2.5.0"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.0.0",
