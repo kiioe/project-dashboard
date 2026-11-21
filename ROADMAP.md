@@ -1,4 +1,4 @@
-# SEQUENCE roadmap
+# SQNCE roadmap
 
 In priority order. Pick one item per session; tick it off here when it's merged.
 The same list lives in the claude.ai Project ("SEQNCE / SEQUENCE v1", `claude/sequence-todo.md`). Update both when either changes.
@@ -7,16 +7,11 @@ The same list lives in the claude.ai Project ("SEQNCE / SEQUENCE v1", `claude/se
 
 - [ ] **Upgrade Supabase to Pro shortly before launch** (no pausing, daily backups), then delete `.github/workflows/keep-alive.yml`. Until then the workflow keeps the free project awake.
 - [ ] **Choose the hosting plan before the first paying customer.** Vercel's free Hobby plan is non-commercial only; a paid product needs Vercel Pro ($20/month per seat) or moving the app's hosting to Cloudflare (commercial use allowed free; data and sign-in stay on Supabase and Clerk). Check which Vercel plan the project is on first. See "When to consider Cloudflare".
-- [ ] **Before moving Clerk to production (do these first, in order):**
-  1. ~~**Choose and buy a domain.**~~ Done 15 Nov 2026: `sqnce.co.uk` (main address) and `sequenceevents.co.uk` registered at Cloudflare for one year with auto-renew, registrant details private, DNSSEC active. (`sequence.co.uk` belongs to another business.) Pointed at the app on 15 Nov.
-  2. ~~**Decide what happens to existing data.**~~ Decided 18 Nov 2026: start fresh on production. Straight after the move, delete the old test rows (projects, costs, tasks, time, invoices, invoice settings) in one SQL step so invoice numbers restart at INV-0001; keep `keep_alive()` and `keep_alive_log`.
-  3. ~~**Check whether Google (or other social) sign-in is used.**~~ Checked 18 Nov 2026: no social or enterprise sign-in connections in Clerk and none in the code, so no Google keys needed. If social sign-in is added later, production needs our own keys (Clerk's shared ones don't work there).
-  4. **Have the logins ready** in the browser pane: Cloudflare (the domain registrar, to add DNS records), Clerk, Vercel and Supabase.
-- [ ] **Move Clerk to a production instance.** In progress: production instance, DNS and lockout done; switched from the deprecated `@clerk/clerk-react` to `@clerk/react` v6 (`<SignedIn>`/`<SignedOut>` became `<Show when="signed-in">`/`"signed-out"`). Next: put the production `pk_live_…` key in Vercel, then update the Clerk domain in Supabase → Authentication → Third-Party Auth (currently `sought-quail-4553.clerk.accounts.dev`) and the Clerk keys in Vercel. Users can't move between Clerk instances, so everyone signs up again and recreates the organisation and invoice business details. Existing test data is not moved: delete it straight after the move (see the decision above), leaving the keep-alive function and table alone.
-- [ ] **At the Clerk production move, also:** add "never sends email" records to `sequenceevents.co.uk` (SPF `v=spf1 -all` + DMARC `p=reject`), and decide `sqnce.co.uk`'s email records alongside Clerk's.
+- [ ] **Finish moving Clerk to production (in progress).** Production instance, DNS, lockout (10 tries → 1 minute), `@clerk/react` v6, the live `pk_live_` key in Vercel and Supabase trusting only `clerk.sqnce.co.uk` are done (18 Nov). E signed up on production and created the organisation; the old test data was deleted and the keep-alive job checked green (19 Nov). Left: E re-enters the invoice business details, then a full live test in E's own browser (sign in with no `accounts.dev` address, create a project, admin/member rules, first invoice is INV-0001).
+- [ ] **Phone app and layout (next after the Clerk move).** (a) Installable app (PWA): manifest, icon, full screen, named "SQNCE", so Safari → Share → Add to Home Screen opens it without browser bars. (b) Phone layout following the approved mock-ups (https://claude.ai/artifact/WvrtA5778vpgbBFE388npC): compact header (organisation switcher, account), bottom tabs Projects / Tasks / Costs / Time, projects as cards. No SQL.
+- [ ] **Brand name is SQNCE** (decided 21 Nov 2026): a SEQUENCE word mark exists in classes 9/42 (Sequence HQ Ltd, billing software). Rename "SEQUENCE" in the app's visible text to SQNCE (can ride with the phone item). Search the UK IPO for SQNCE before filing.
 - [ ] **Redirect the old address** `project-dashboard-wczx.vercel.app` to `sqnce.co.uk` once nothing relies on it.
 - [ ] **Watch for Cloudflare's registrant-check email** for both domains (Nominet shows name and address "awaiting validation"); unvalidated .uk domains can be suspended.
-- [ ] **Shorten the lockout after failed sign-ins.** In Clerk → Protections → user lockout, shorten how long an account stays locked after too many failed sign-in attempts (Clerk's default is 1 hour) and check the attempt limit (10 on new instances; older instances may still allow 100). Not about how long people stay signed in. Set it on the production instance, since settings don't carry over from development.
 - [ ] **Install Tailwind properly** (PostCSS/CLI in the Vite build) and remove the CDN script from `index.html`.
 - [ ] **A test copy of the app.** Separate Supabase project + Vercel previews; turn `supabase/` files into Supabase migrations.
 
@@ -35,7 +30,6 @@ The same list lives in the claude.ai Project ("SEQNCE / SEQUENCE v1", `claude/se
 - [ ] **Templates:** a new event starts with standard tasks and cost categories.
 - [ ] **Event date + deadlines overview:** overdue tasks and unpaid costs across all projects.
 - [ ] **Client side of money:** markup or client price per item (invoices are at cost today), "billable to client" flag, record of issued invoices.
-- [ ] **Phone layout** for on-site use.
 - [ ] Smaller: attach a receipt/invoice file to a cost item.
 
 ## When to consider Cloudflare
