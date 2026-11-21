@@ -44,7 +44,7 @@ export default function InvoiceDialog({ project, categories, items, unbilledTime
   const [suggestedNumber, setSuggestedNumber] = useState('');
   const [excluded, setExcluded] = useState([]); // cost item ids left off
   const [excludedTime, setExcludedTime] = useState([]); // time entry ids left off
-  const [vatOn, setVatOn] = useState(false);
+  const [vatOn, setVatOn] = useState(true);
   const [vatRate, setVatRate] = useState('20');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -56,9 +56,10 @@ export default function InvoiceDialog({ project, categories, items, unbilledTime
       const s = data ? { ...emptySeller, ...data } : emptySeller;
       setSeller(s);
       setEditingSeller(!s.business_name);
-      const defaultRate = Number(s.default_vat_rate);
+      // VAT is added by default, at the saved rate (20% unless changed).
+      const defaultRate = Number(s.default_vat_rate) > 0 ? Number(s.default_vat_rate) : 20;
       setVatRate(String(defaultRate));
-      setVatOn(defaultRate > 0);
+      setVatOn(true);
       const next = formatNumber(s.next_invoice_number);
       setSuggestedNumber(next);
       setInvoice(inv => ({ ...inv, number: next }));
@@ -103,14 +104,15 @@ export default function InvoiceDialog({ project, categories, items, unbilledTime
     setError('');
     setBusy(true);
     try {
-      // Save your details for next time (and the VAT rate as the default).
+      // Save your details for next time. A VAT rate you use becomes the default; leaving VAT off
+      // for one invoice doesn't change it.
       const saved = await supabase.from('org_invoice_settings').upsert({
         org_id: orgId,
         business_name: seller.business_name.trim(),
         address: seller.address.trim(),
         email: seller.email.trim(),
         payment_details: seller.payment_details.trim(),
-        default_vat_rate: vatOn && vatRateValid ? rate : 0,
+        default_vat_rate: vatOn && vatRateValid && rate > 0 ? rate : (Number(seller.default_vat_rate) > 0 ? Number(seller.default_vat_rate) : 20),
         updated_at: new Date().toISOString()
       }, { onConflict: 'org_id' });
       if (saved.error) throw new Error('Could not save your business details. Please try again.');
