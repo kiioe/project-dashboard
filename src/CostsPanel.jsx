@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, Trash2, Pencil, Clock, FileDown } from 'lucide-react';
+import { Plus, Trash2, Pencil, Clock, FileDown, X } from 'lucide-react';
 import { MONEY_TYPING, parseMoney, CURRENCIES, formatMoney, sumMoney } from './money';
 
 export const ITEM_STATUSES = ['Quoted', 'Booked', 'Invoiced', 'Paid'];
@@ -84,7 +84,7 @@ function ItemFields({ draft, onChange, symbol, onSave, onCancel, saveLabel }) {
 
 // Shows one project's cost categories and the items inside them.
 // Everyone in the organisation can view; only admins can add, change or delete.
-export default function CostsPanel({ project, categories, items, isAdmin, supabase, orgId, onChanged, unbilledTime = [], onBillTime, invoiceButton = null, invoices = [], invoicedItemIds = new Set(), onDownloadInvoice }) {
+export default function CostsPanel({ project, categories, items, isAdmin, supabase, orgId, onChanged, unbilledTime = [], onBillTime, invoiceButton = null, invoices = [], itemInvoice = new Map(), onDownloadInvoice }) {
   const money = (n) => formatMoney(n, project.currency);
   const symbol = CURRENCIES[project.currency].symbol;
   const [error, setError] = useState('');
@@ -95,6 +95,7 @@ export default function CostsPanel({ project, categories, items, isAdmin, supaba
   const [editingItem, setEditingItem] = useState(null); // { id, draft }
   const [editingCategory, setEditingCategory] = useState(null); // { id, name, budget }
   const [confirmDelete, setConfirmDelete] = useState(null); // e.g. 'category-3' or 'item-12'
+  const [blocked, setBlocked] = useState(null); // { title, rows: [{ item, invoice }] } for the "can't delete" pop-up
 
   // ---- Logged time ready to bill ----
   const [showBillOptions, setShowBillOptions] = useState(false);
@@ -202,8 +203,15 @@ export default function CostsPanel({ project, categories, items, isAdmin, supaba
     await run(supabase.from(table).delete().eq('id', id));
   };
 
-  const DeleteButton = ({ kind, id, table, label }) =>
-    confirmDelete === `${kind}-${id}` ? (
+  // Items on an issued invoice can't be deleted (nor their category): say why, and which invoice.
+  const invoicedIn = (list) => list.filter(i => itemInvoice.has(i.id)).map(i => ({ item: i, invoice: itemInvoice.get(i.id) }));
+  const DeleteButton = ({ kind, id, table, label, blockedRows = [], blockedTitle = '' }) =>
+    blockedRows.length > 0 ? (
+      <button onClick={() => setBlocked({ title: blockedTitle, rows: blockedRows })} aria-label={label}
+        title="On an issued invoice" className="text-slate-400 hover:text-slate-600">
+        <Trash2 size={16} />
+      </button>
+    ) : confirmDelete === `${kind}-${id}` ? (
       <span className="flex items-center gap-2 text-xs">
         <button onClick={() => remove(table, id)} className="text-red-700 font-semibold hover:underline">Delete</button>
         <button onClick={() => setConfirmDelete(null)} className="text-slate-600 hover:underline">Keep</button>
@@ -229,6 +237,34 @@ export default function CostsPanel({ project, categories, items, isAdmin, supaba
 
   return (
     <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 space-y-4">
+      {blocked && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-4" onClick={() => setBlocked(null)}>
+          <div role="alertdialog" aria-modal="true" aria-labelledby="blocked-title"
+            className="bg-white rounded-xl shadow-xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-3 border-b border-slate-200">
+              <h3 id="blocked-title" className="font-semibold text-slate-800">{blocked.title}</h3>
+              <button onClick={() => setBlocked(null)} aria-label="Close" className="text-slate-500 hover:text-slate-800"><X size={18} /></button>
+            </div>
+            <div className="px-5 py-4 text-sm text-slate-700 space-y-3">
+              <p>{blocked.rows.length === 1 ? 'This item is' : 'These items are'} on an issued invoice. Invoiced items are kept so the invoice stays accurate and nothing is billed twice.</p>
+              <ul className="border border-slate-200 rounded-lg divide-y divide-slate-100">
+                {blocked.rows.map(({ item, invoice }) => (
+                  <li key={item.id} className="flex flex-wrap items-center gap-x-3 px-3 py-2">
+                    <span className="text-slate-800">{item.description}</span>
+                    <span className="ml-auto text-slate-600">
+                      <strong>{invoice.number}</strong> · {invoice.issue_date}{invoice.client_name ? ` · ${invoice.client_name}` : ''}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <p className="text-slate-500 text-xs">You can still edit the item or change its status. The invoice keeps its own copy.</p>
+            </div>
+            <div className="flex justify-end px-5 py-3 border-t border-slate-200">
+              <button onClick={() => setBlocked(null)} className={secondaryButton}>OK</button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Project-level summary */}
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
         <Stat label="Project budget" value={money(project.budget)} />
@@ -402,7 +438,8 @@ export default function CostsPanel({ project, categories, items, isAdmin, supaba
                     <span className="flex items-center gap-3">
                       <EditButton label={`Edit category ${category.name}`}
                         onClick={() => setEditingCategory({ id: category.id, name: category.name, budget: String(category.budget) })} />
-                      {catItems.some(i => invoicedItemIds.has(i.id)) ? null : <DeleteButton kind="category" id={category.id} table="project_categories" label={`Delete category ${category.name} and its items`} />}
+                      <DeleteButton kind="category" id={category.id} table="project_categories" label={`Delete category ${category.name} and its items`}
+                        blockedRows={invoicedIn(catItems)} blockedTitle={`The category “${category.name}” can’t be deleted`} />
                     </span>
                   )}
                 </div>
@@ -463,11 +500,11 @@ export default function CostsPanel({ project, categories, items, isAdmin, supaba
                             <span className="flex items-center justify-end gap-3">
                               <EditButton label={`Edit item ${item.description}`}
                                 onClick={() => setEditingItem({ id: item.id, draft: itemToDraft(item) })} />
-                              {invoicedItemIds.has(item.id) ? (
-                                <span className="text-xs text-slate-500" title="On an issued invoice, so it can't be deleted">Invoiced</span>
-                              ) : (
-                                <DeleteButton kind="item" id={item.id} table="cost_items" label={`Delete item ${item.description}`} />
+                              {itemInvoice.has(item.id) && (
+                                <span className="text-xs text-slate-500">On {itemInvoice.get(item.id).number}</span>
                               )}
+                              <DeleteButton kind="item" id={item.id} table="cost_items" label={`Delete item ${item.description}`}
+                                blockedRows={invoicedIn([item])} blockedTitle={`“${item.description}” can’t be deleted`} />
                             </span>
                           </td>
                         )}

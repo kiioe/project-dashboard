@@ -125,12 +125,15 @@ const ProjectDashboard = () => {
   };
   const invoicesFor = (projectId) => invoices.filter(i => i.project_id === projectId);
   const invoicedItemIds = new Set(invoiceItems.map(l => l.cost_item_id).filter(Boolean));
+  // Which issued invoice each cost item is on (shown when someone tries to delete it).
+  const itemInvoice = new Map(invoiceItems.filter(l => l.cost_item_id)
+    .map(l => [l.cost_item_id, invoices.find(i => i.id === l.invoice_id)]).filter(([, inv]) => inv));
   const uninvoicedItemsFor = (projectId) => costItems.filter(i => i.project_id === projectId && !invoicedItemIds.has(i.id));
   const unbilledTimeFor = (projectId) => unbilledTime.filter(t => t.project_id === projectId);
   // How many things a new invoice would pick up: cost items not yet invoiced, plus unbilled logged time.
   const newToInvoiceFor = (projectId) => uninvoicedItemsFor(projectId).length + unbilledTimeFor(projectId).length;
   const downloadInvoice = (invoice) =>
-    downloadIssuedInvoice(invoice, invoiceItems, projects.find(p => p.id === invoice.project_id)?.name || '');
+    downloadIssuedInvoice(invoice, invoiceItems, projects.find(p => p.id === invoice.project_id)?.name || invoice.project_name || '');
   // After an invoice is issued: it may have billed logged time and saved the client details.
   const refreshAfterInvoice = async () => {
     await Promise.all([fetchInvoices(), fetchCosts(), fetchProjects()]);
@@ -992,9 +995,9 @@ const ProjectDashboard = () => {
                               {(() => {
                                 const hasCosts = itemsFor(project.id).length > 0 || categories.some(c => c.project_id === project.id);
                                 const hasTasks = tasksFor(project.id).length > 0;
-                                const parts = [hasTasks && 'tasks', hasCosts && 'costs', invoicesFor(project.id).length > 0 && 'issued invoices'].filter(Boolean);
-                                return parts.length ? ` and all its ${parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}` : parts[0]}` : '';
+                                return hasCosts && hasTasks ? ' and all its tasks and costs' : hasCosts ? ' and all its costs' : hasTasks ? ' and all its tasks' : '';
                               })()}? This can’t be undone.
+                              {invoicesFor(project.id).length > 0 && ' Its issued invoices are kept (see Invoices below).'}
                             </p>
                             <div className="flex items-center gap-3">
                               <button
@@ -1066,7 +1069,7 @@ const ProjectDashboard = () => {
                           onBillTime={billLoggedTime}
                           invoiceButton={<GenerateInvoiceButton project={project} />}
                           invoices={invoicesFor(project.id)}
-                          invoicedItemIds={invoicedItemIds}
+                          itemInvoice={itemInvoice}
                           onDownloadInvoice={downloadInvoice}
                         />
                       </td>
@@ -1078,6 +1081,49 @@ const ProjectDashboard = () => {
             </table>
           </div>
         </div>
+
+        {/* All issued invoices, kept for audit even after their project is deleted */}
+        {invoices.length > 0 && (
+          <div className="bg-white p-6 rounded-xl shadow-md border border-slate-200 mt-8">
+            <h2 className="text-xl font-bold text-slate-800 mb-1">Invoices</h2>
+            <p className="text-sm text-slate-500 mb-4">Every issued invoice, newest first. Invoices are kept even if their project is deleted.</p>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200 text-left text-slate-700">
+                    <th className="py-2 px-4 font-semibold">Number</th>
+                    <th className="py-2 px-4 font-semibold">Issued</th>
+                    <th className="py-2 px-4 font-semibold">Project</th>
+                    <th className="py-2 px-4 font-semibold">Client</th>
+                    <th className="py-2 px-4 font-semibold text-right">Total</th>
+                    <th className="py-2 px-4"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {invoices.map(inv => {
+                    const live = projects.find(p => p.id === inv.project_id);
+                    return (
+                      <tr key={inv.id} className="border-b border-slate-100">
+                        <td className="py-2 px-4 font-medium text-slate-800">{inv.number}</td>
+                        <td className="py-2 px-4 text-slate-600">{inv.issue_date}</td>
+                        <td className="py-2 px-4 text-slate-600">
+                          {live ? live.name : inv.project_name}
+                          {!live && <span className="ml-2 text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">Project deleted</span>}
+                        </td>
+                        <td className="py-2 px-4 text-slate-600">{inv.client_name}</td>
+                        <td className="py-2 px-4 text-right font-medium text-slate-800">{formatMoney(Number(inv.total), inv.currency)}</td>
+                        <td className="py-2 px-4 text-right">
+                          <button onClick={() => downloadInvoice(inv)} aria-label={`Download invoice ${inv.number}`} title="Download PDF"
+                            className="text-blue-700 hover:text-blue-900">Download</button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </div>
       {invoiceFor !== null && isAdmin && projects.some(p => p.id === invoiceFor) && (
         <InvoiceDialog
