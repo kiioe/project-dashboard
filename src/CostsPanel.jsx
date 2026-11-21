@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, Trash2, Pencil, Clock, FileText } from 'lucide-react';
+import { Plus, Trash2, Pencil, Clock, FileDown } from 'lucide-react';
 import { MONEY_TYPING, parseMoney, CURRENCIES, formatMoney, sumMoney } from './money';
 
 export const ITEM_STATUSES = ['Quoted', 'Booked', 'Invoiced', 'Paid'];
@@ -84,7 +84,7 @@ function ItemFields({ draft, onChange, symbol, onSave, onCancel, saveLabel }) {
 
 // Shows one project's cost categories and the items inside them.
 // Everyone in the organisation can view; only admins can add, change or delete.
-export default function CostsPanel({ project, categories, items, isAdmin, supabase, orgId, onChanged, unbilledTime = [], onBillTime, onCreateInvoice }) {
+export default function CostsPanel({ project, categories, items, isAdmin, supabase, orgId, onChanged, unbilledTime = [], onBillTime, invoiceButton = null, invoices = [], invoicedItemIds = new Set(), onDownloadInvoice }) {
   const money = (n) => formatMoney(n, project.currency);
   const symbol = CURRENCIES[project.currency].symbol;
   const [error, setError] = useState('');
@@ -237,13 +237,26 @@ export default function CostsPanel({ project, categories, items, isAdmin, supaba
         <Stat label="Paid" value={money(projectTotals.paid)} />
         <Stat label="Left in budget" value={money(remaining)} tone={remaining < 0 ? 'text-red-700' : 'text-green-700'} />
       </div>
-      {isAdmin && onCreateInvoice && (
-        <div className="flex justify-end">
-          <button onClick={onCreateInvoice} disabled={items.length === 0}
-            title={items.length === 0 ? 'Add cost items first' : 'Create a PDF invoice from these items'}
-            className="flex items-center gap-2 bg-white border border-blue-300 text-blue-700 px-4 py-2 rounded-lg text-sm hover:bg-blue-50 disabled:opacity-50">
-            <FileText size={16} /> Create invoice
-          </button>
+      {invoiceButton && <div className="flex justify-end">{invoiceButton}</div>}
+
+      {/* Issued invoices for this project */}
+      {invoices.length > 0 && (
+        <div className="bg-white border border-slate-200 rounded-lg px-4 py-3">
+          <h4 className="text-sm font-semibold text-slate-700 mb-2">Invoices</h4>
+          <ul className="divide-y divide-slate-100 text-sm">
+            {invoices.map(inv => (
+              <li key={inv.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 py-2">
+                <span className="font-medium text-slate-800">{inv.number}</span>
+                <span className="text-slate-500">{inv.issue_date}</span>
+                <span className="text-slate-500">{inv.client_name}</span>
+                <span className="ml-auto font-medium text-slate-800">{formatMoney(Number(inv.total), inv.currency)}</span>
+                <button onClick={() => onDownloadInvoice(inv).catch(() => setError('Could not make the PDF. Please try again.'))}
+                  aria-label={`Download invoice ${inv.number}`} title="Download PDF" className="text-blue-600 hover:text-blue-800">
+                  <FileDown size={16} />
+                </button>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
       {allocated > project.budget && (
@@ -389,7 +402,7 @@ export default function CostsPanel({ project, categories, items, isAdmin, supaba
                     <span className="flex items-center gap-3">
                       <EditButton label={`Edit category ${category.name}`}
                         onClick={() => setEditingCategory({ id: category.id, name: category.name, budget: String(category.budget) })} />
-                      <DeleteButton kind="category" id={category.id} table="project_categories" label={`Delete category ${category.name} and its items`} />
+                      {catItems.some(i => invoicedItemIds.has(i.id)) ? null : <DeleteButton kind="category" id={category.id} table="project_categories" label={`Delete category ${category.name} and its items`} />}
                     </span>
                   )}
                 </div>
@@ -450,7 +463,11 @@ export default function CostsPanel({ project, categories, items, isAdmin, supaba
                             <span className="flex items-center justify-end gap-3">
                               <EditButton label={`Edit item ${item.description}`}
                                 onClick={() => setEditingItem({ id: item.id, draft: itemToDraft(item) })} />
-                              <DeleteButton kind="item" id={item.id} table="cost_items" label={`Delete item ${item.description}`} />
+                              {invoicedItemIds.has(item.id) ? (
+                                <span className="text-xs text-slate-500" title="On an issued invoice, so it can't be deleted">Invoiced</span>
+                              ) : (
+                                <DeleteButton kind="item" id={item.id} table="cost_items" label={`Delete item ${item.description}`} />
+                              )}
                             </span>
                           </td>
                         )}

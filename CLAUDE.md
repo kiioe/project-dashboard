@@ -15,11 +15,11 @@ The to-do list is in `ROADMAP.md`. Keep it up to date.
 ## Code map
 
 - `src/App.jsx`: the main screen (project form, timeline, budget chart, time tracking, project table). Large; splitting it up is on the roadmap.
-- `src/CostsPanel.jsx`: cost categories and items, billing logged time, and the "Create invoice" button.
+- `src/CostsPanel.jsx`: cost categories and items, billing logged time, the "Generate invoice" button and the project's issued invoices.
 - `src/TasksPanel.jsx`: project tasks. Progress comes from these.
-- `src/InvoiceDialog.jsx` and `src/invoicePdf.js`: the invoice window and PDF builder (jsPDF, loaded only when needed).
+- `src/InvoiceDialog.jsx` and `src/invoicePdf.js`: the invoice preview and PDF builder (jsPDF, loaded only when needed). Issued invoices are rebuilt from their saved copy.
 - `src/money.js`: shared rules for money and hours (typing, parsing, formatting, adding up in pence). Use these; don't duplicate them.
-- `supabase/*.sql`: database changes, run by hand in the Supabase SQL editor, in this order: `cost-tracking.sql`, `edit-projects.sql`, `bill-logged-time.sql`, `billing-v2.sql`, `edit-time-entries.sql`, `invoices-and-tasks.sql`, `keep-alive.sql`, `keep-alive-v2.sql`.
+- `supabase/*.sql`: database changes, run by hand in the Supabase SQL editor, in this order: `cost-tracking.sql`, `edit-projects.sql`, `bill-logged-time.sql`, `billing-v2.sql`, `edit-time-entries.sql`, `invoices-and-tasks.sql`, `keep-alive.sql`, `keep-alive-v2.sql`, `generate-invoice.sql`.
   Earlier setup (the projects and time_entries tables and their first rules) was done in the dashboard before these files existed.
 
 ## How we work
@@ -64,7 +64,7 @@ The to-do list is in `ROADMAP.md`. Keep it up to date.
 - **Costs:** categories (each with a budget) contain items. Status Quoted → Booked → Invoiced → Paid; Booked or later counts as committed. A project's Amount Spent = the amount entered on the project + items marked Paid. A £0-budget category shows "No budget set", not a negative "Left".
 - **Logged time** is billed via `bill_logged_time()` at the rate recorded when logged (else the project's rate), into the project's Staffing/Labour category (created as "Staffing" if missing). Only your own **unbilled** entries can be edited or deleted. Deleting a billed cost item unbills its hours.
 - **Progress** comes only from tasks (done ÷ total, equal weight; 0% with none). Database triggers enforce it, so it can't be set by hand. Status is a manual choice.
-- **Invoices:** items chosen each time (all ticked by default); VAT optional (20% default); business details saved once per organisation in `org_invoice_settings`; numbers from `claim_invoice_number()` (INV-0001, …, per organisation).
+- **Invoices (one-click, 21 Nov 2026):** "Generate invoice" (admins, any status) opens a pre-filled preview of everything not yet invoiced: cost items plus unbilled logged time (billed when issued). `issue_invoice()` records it in `invoices`/`invoice_items` in one step (a cost item can be on only one invoice, and can't be deleted once invoiced); the saved copy is what the PDF shows and re-downloads. Client name/address live on the project. VAT default and business details saved per organisation in `org_invoice_settings`; numbers INV-0001, … per organisation (typed numbers allowed; the sequence skips used ones). Item statuses are not changed by invoicing.
 - **Keeping the database awake:** while on Supabase's free plan, `.github/workflows/keep-alive.yml` calls `keep_alive()` daily; each call updates the one-row `keep_alive_log` table, so it counts as real database activity (needs the `SUPABASE_URL` and `SUPABASE_ANON_KEY` repository secrets). Upgrade to Supabase Pro shortly before real customers arrive (no pausing, daily backups), then delete the workflow.
 - **Permissions:** everyone in an organisation can view; only organisation admins can add, change or delete. Rules use `jwt_org_id()` and `jwt_is_org_admin()`, which accept both Clerk token formats (`org_id`/`org_role` and `o.id`/`o.rol`). Use these helpers in new rules.
 - **Clerk production move:** start fresh (decided 18 Nov 2026). Old test data isn't moved; delete it in one SQL step straight after the move (projects, costs, tasks, time, invoices, invoice settings), never touching `keep_alive()` or `keep_alive_log`.

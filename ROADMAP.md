@@ -8,6 +8,7 @@ The same list lives in the claude.ai Project ("SEQNCE / SEQUENCE v1", `claude/se
 - [ ] **Upgrade Supabase to Pro shortly before launch** (no pausing, daily backups), then delete `.github/workflows/keep-alive.yml`. Until then the workflow keeps the free project awake.
 - [ ] **Choose the hosting plan before the first paying customer.** Vercel's free Hobby plan is non-commercial only; a paid product needs Vercel Pro ($20/month per seat) or moving the app's hosting to Cloudflare (commercial use allowed free; data and sign-in stay on Supabase and Clerk). Check which Vercel plan the project is on first. See "When to consider Cloudflare".
 - [ ] **Finish moving Clerk to production (in progress).** Production instance, DNS, lockout (10 tries → 1 minute), `@clerk/react` v6, the live `pk_live_` key in Vercel and Supabase trusting only `clerk.sqnce.co.uk` are done (18 Nov). E signed up on production and created the organisation; the old test data was deleted and the keep-alive job checked green (19 Nov). Left: E re-enters the invoice business details, then a full live test in E's own browser (sign in with no `accounts.dev` address, create a project, admin/member rules, first invoice is INV-0001).
+- [ ] **One-click "Generate invoice" (in progress, 21 Nov).** Built: button on every project (list and Costs), pre-filled preview of everything not yet invoiced (cost items + unbilled time), client fields on the project, issued invoices recorded and listed with re-download. Left: E runs `supabase/generate-invoice.sql`, merge, full live test. Later: void/credit an invoice, deposits.
 - [ ] **Phone app and layout (next after the Clerk move).** (a) Installable app (PWA): manifest, icon, full screen, named "SQNCE", so Safari → Share → Add to Home Screen opens it without browser bars. (b) Phone layout following the approved mock-ups (https://claude.ai/artifact/WvrtA5778vpgbBFE388npC): compact header (organisation switcher, account), bottom tabs Projects / Tasks / Costs / Time, projects as cards. No SQL.
 - [ ] **Brand name is SQNCE** (decided 21 Nov 2026): a SEQUENCE word mark exists in classes 9/42 (Sequence HQ Ltd, billing software). Rename "SEQUENCE" in the app's visible text to SQNCE (can ride with the phone item). Search the UK IPO for SQNCE before filing.
 - [ ] **Redirect the old address** `project-dashboard-wczx.vercel.app` to `sqnce.co.uk` once nothing relies on it.
@@ -29,7 +30,7 @@ The same list lives in the claude.ai Project ("SEQNCE / SEQUENCE v1", `claude/se
 - [ ] **Let team members do more** (tick tasks, log/edit their own time); members can only view today.
 - [ ] **Templates:** a new event starts with standard tasks and cost categories.
 - [ ] **Event date + deadlines overview:** overdue tasks and unpaid costs across all projects.
-- [ ] **Client side of money:** markup or client price per item (invoices are at cost today), "billable to client" flag, record of issued invoices.
+- [ ] **Client side of money:** markup or client price per item (invoices are at cost today), "billable to client" flag.
 - [ ] Smaller: attach a receipt/invoice file to a cost item.
 
 ## When to consider Cloudflare

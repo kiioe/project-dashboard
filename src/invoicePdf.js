@@ -13,7 +13,7 @@ const longDate = (iso) =>
 const safeFileName = (text) => text.replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-').slice(0, 60) || 'project';
 
 // Builds the invoice PDF and returns the jsPDF document. The PDF library is loaded only when needed.
-export async function buildInvoicePdf({ seller, client, invoice, project, lines, vatOn, vatRate }) {
+export async function buildInvoicePdf({ seller, client, invoice, project, lines, vatOn, vatRate, totals: savedTotals }) {
   const [{ jsPDF }, { default: autoTable }] = await Promise.all([import('jspdf'), import('jspdf-autotable')]);
   const money = (n) => formatMoneyFixed(n, project.currency);
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
@@ -75,7 +75,7 @@ export async function buildInvoicePdf({ seller, client, invoice, project, lines,
   });
 
   // Totals.
-  const { subtotal, vat, total } = invoiceTotals(lines, vatOn, vatRate);
+  const { subtotal, vat, total } = savedTotals || invoiceTotals(lines, vatOn, vatRate);
   y = doc.lastAutoTable.finalY + 8;
   if (y > 250) { doc.addPage(); y = 24; }
   const totalsLabelX = right - 70;
@@ -120,3 +120,28 @@ export async function buildInvoicePdf({ seller, client, invoice, project, lines,
 }
 
 export const invoiceFileName = (invoice, project) => `Invoice-${invoice.number}-${safeFileName(project.name)}.pdf`;
+
+// Loads the PDF library ahead of time, so issuing an invoice doesn't fail half-way on a slow connection.
+export const preloadPdfLibrary = () => Promise.all([import('jspdf'), import('jspdf-autotable')]);
+
+// Downloads an issued invoice exactly as it was recorded (seller, client, lines and totals are copies).
+export async function downloadIssuedInvoice(invoice, invoiceItems, projectName) {
+  const lines = invoiceItems
+    .filter(l => l.invoice_id === invoice.id)
+    .sort((a, b) => a.position - b.position)
+    .map(l => ({ description: l.description, category: l.category, quantity: Number(l.quantity), unit_cost: Number(l.unit_cost), total: Number(l.total) }));
+  const vatOn = invoice.vat_rate !== null && invoice.vat_rate !== undefined;
+  const details = { number: invoice.number, issueDate: invoice.issue_date, dueDate: invoice.due_date || '', notes: invoice.notes || '' };
+  const project = { name: projectName, currency: invoice.currency };
+  const doc = await buildInvoicePdf({
+    seller: { business_name: invoice.seller_name, address: invoice.seller_address || '', email: invoice.seller_email || '', payment_details: invoice.seller_payment_details || '' },
+    client: { name: invoice.client_name, details: invoice.client_address || '' },
+    invoice: details,
+    project,
+    lines,
+    vatOn,
+    vatRate: vatOn ? Number(invoice.vat_rate) : 0,
+    totals: { subtotal: Number(invoice.subtotal), vat: Number(invoice.vat), total: Number(invoice.total) }
+  });
+  doc.save(invoiceFileName(details, project));
+}
