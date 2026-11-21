@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { X, FileDown } from 'lucide-react';
-import { formatMoney } from './money';
-import { buildInvoicePdf, invoiceFileName, invoiceTotals } from './invoicePdf';
+import { formatMoney, sumMoney } from './money';
+import { invoiceTotals, preloadPdfLibrary, downloadIssuedInvoice } from './invoicePdf';
 
 const inputClass = 'px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-full';
 const labelClass = 'block text-xs font-medium text-slate-600 mb-1';
@@ -13,20 +13,37 @@ const isoDate = (d) => {
 };
 const addDays = (days) => isoDate(new Date(Date.now() + days * 86400000));
 const formatNumber = (n) => `INV-${String(n).padStart(4, '0')}`;
+const hoursText = (h) => String(Math.round(h * 100) / 100);
 
 const emptySeller = { business_name: '', address: '', email: '', payment_details: '', default_vat_rate: 20, next_invoice_number: 1 };
 
-// Creates a PDF invoice from a project's cost items.
-// Your business details are saved once for the organisation and reused on every invoice.
-export default function InvoiceDialog({ project, categories, items, supabase, orgId, onClose }) {
+// Logged time is billed the way the database bills it: one line per hourly rate, hours added up first.
+export const timeLines = (entries, projectRate) => {
+  const byRate = new Map();
+  entries.forEach(t => {
+    const rate = t.hourly_rate || projectRate;
+    byRate.set(rate, [...(byRate.get(rate) || []), t]);
+  });
+  return [...byRate.entries()].sort((a, b) => a[0] - b[0]).map(([rate, list]) => {
+    const hours = sumMoney(list.map(t => t.hours));
+    return { rate, hours, total: Math.round(hours * rate * 100) / 100 };
+  });
+};
+
+// The one-click invoice: a pre-filled preview of everything not yet invoiced on the project.
+// Downloading records the invoice (and bills any ticked logged time), so the next one picks up only new items.
+// Your business details are asked for only the first time, then saved for the organisation.
+export default function InvoiceDialog({ project, categories, items, unbilledTime, supabase, orgId, onIssued, onClose }) {
   const money = (n) => formatMoney(n, project.currency);
+  const projectRate = Number(project.hourly_rate) || 0;
   const [loading, setLoading] = useState(true);
   const [seller, setSeller] = useState(emptySeller);
   const [editingSeller, setEditingSeller] = useState(false);
-  const [client, setClient] = useState({ name: '', details: '' });
+  const [client, setClient] = useState({ name: project.client_name || '', address: project.client_address || '' });
   const [invoice, setInvoice] = useState({ number: '', issueDate: isoDate(new Date()), dueDate: addDays(14), notes: '' });
   const [suggestedNumber, setSuggestedNumber] = useState('');
-  const [excluded, setExcluded] = useState([]); // item ids left off the invoice
+  const [excluded, setExcluded] = useState([]); // cost item ids left off
+  const [excludedTime, setExcludedTime] = useState([]); // time entry ids left off
   const [vatOn, setVatOn] = useState(false);
   const [vatRate, setVatRate] = useState('20');
   const [error, setError] = useState('');
@@ -39,7 +56,9 @@ export default function InvoiceDialog({ project, categories, items, supabase, or
       const s = data ? { ...emptySeller, ...data } : emptySeller;
       setSeller(s);
       setEditingSeller(!s.business_name);
-      setVatRate(String(Number(s.default_vat_rate)));
+      const defaultRate = Number(s.default_vat_rate);
+      setVatRate(String(defaultRate));
+      setVatOn(defaultRate > 0);
       const next = formatNumber(s.next_invoice_number);
       setSuggestedNumber(next);
       setInvoice(inv => ({ ...inv, number: next }));
@@ -55,67 +74,81 @@ export default function InvoiceDialog({ project, categories, items, supabase, or
   }, [onClose]);
 
   const categoryName = (id) => categories.find(c => c.id === id)?.name || '';
-  const lines = items
-    .filter(i => !excluded.includes(i.id))
-    .map(i => ({ ...i, category: categoryName(i.category_id) }));
+  const chosenItems = items.filter(i => !excluded.includes(i.id));
+  const chosenTime = unbilledTime.filter(t => !excludedTime.includes(t.id));
+  const chosenTimeLines = timeLines(chosenTime, projectRate);
+  const missingRate = chosenTime.some(t => !(t.hourly_rate || projectRate));
+  const lineCount = items.length + unbilledTime.length;
+  const chosenCount = chosenItems.length + chosenTime.length;
+
   const rate = Number(vatRate);
   const vatRateValid = /^\d{1,2}(\.\d{1,2})?$|^100$/.test(vatRate) && rate >= 0 && rate <= 100;
-  const totals = invoiceTotals(lines, vatOn && vatRateValid, rate);
+  const totals = invoiceTotals([...chosenItems, ...chosenTimeLines], vatOn && vatRateValid, rate);
 
-  const toggleItem = (id) => setExcluded(excluded.includes(id) ? excluded.filter(x => x !== id) : [...excluded, id]);
-  const setAll = (on) => setExcluded(on ? [] : items.map(i => i.id));
+  const toggle = (list, setList, id) => setList(list.includes(id) ? list.filter(x => x !== id) : [...list, id]);
+  const setAll = (on) => {
+    setExcluded(on ? [] : items.map(i => i.id));
+    setExcludedTime(on ? [] : unbilledTime.map(t => t.id));
+  };
 
   const download = async () => {
     if (!seller.business_name.trim()) { setEditingSeller(true); return setError('Add your business name (it goes at the top of the invoice).'); }
     if (!client.name.trim()) return setError('Add who the invoice is for (the client’s name).');
-    if (lines.length === 0) return setError('Tick at least one item to invoice.');
+    if (chosenCount === 0) return setError('Tick at least one item to invoice.');
+    if (missingRate) return setError('Some ticked hours have no hourly rate. Set one on the project, or untick them.');
     if (vatOn && !vatRateValid) return setError('VAT rate must be between 0 and 100, with up to 2 decimal places.');
     if (!invoice.number.trim()) return setError('Add an invoice number.');
-    if (invoice.dueDate && invoice.issueDate && invoice.dueDate < invoice.issueDate) return setError('The due date can’t be before the issue date.');
+    if (!invoice.issueDate) return setError('Add an issue date.');
+    if (invoice.dueDate && invoice.dueDate < invoice.issueDate) return setError('The due date can’t be before the issue date.');
     setError('');
     setBusy(true);
     try {
-      // Save your details for next time.
+      // Save your details for next time (and the VAT rate as the default).
       const saved = await supabase.from('org_invoice_settings').upsert({
         org_id: orgId,
         business_name: seller.business_name.trim(),
         address: seller.address.trim(),
         email: seller.email.trim(),
         payment_details: seller.payment_details.trim(),
-        default_vat_rate: vatRateValid ? rate : Number(seller.default_vat_rate),
+        default_vat_rate: vatOn && vatRateValid ? rate : 0,
         updated_at: new Date().toISOString()
       }, { onConflict: 'org_id' });
       if (saved.error) throw new Error('Could not save your business details. Please try again.');
 
-      // Use the next number in the sequence unless you typed your own.
-      let number = invoice.number.trim();
-      const usedSequence = number === suggestedNumber;
-      if (usedSequence) {
-        const claimed = await supabase.rpc('claim_invoice_number');
-        if (claimed.error) throw new Error('Could not get an invoice number. Please try again.');
-        number = claimed.data;
-      }
+      await preloadPdfLibrary();
 
-      const finalInvoice = { ...invoice, number };
-      const doc = await buildInvoicePdf({
-        seller: { ...seller, business_name: seller.business_name.trim() },
-        client: { name: client.name.trim(), details: client.details },
-        invoice: finalInvoice,
-        project,
-        lines,
-        vatOn: vatOn && vatRateValid,
-        vatRate: rate
+      // Record the invoice. Leaving the suggested number means "the next in the sequence".
+      const typed = invoice.number.trim();
+      const issued = await supabase.rpc('issue_invoice', {
+        p_project_id: project.id,
+        p_item_ids: chosenItems.map(i => i.id),
+        p_entry_ids: chosenTime.map(t => t.id),
+        p_number: typed === suggestedNumber ? null : typed,
+        p_issue_date: invoice.issueDate,
+        p_due_date: invoice.dueDate || null,
+        p_vat_rate: vatOn && vatRateValid ? rate : null,
+        p_notes: invoice.notes,
+        p_client_name: client.name.trim(),
+        p_client_address: client.address.trim()
       });
-      doc.save(invoiceFileName(finalInvoice, project));
-      setDone(`Downloaded invoice ${number} (${money(totals.total)}).`);
-      setEditingSeller(false);
-      // Ready for another invoice: suggest the following number in the sequence.
-      const claimedDigits = /^INV-(\d+)$/.exec(number);
-      if (usedSequence && claimedDigits) {
-        const next = formatNumber(Number(claimedDigits[1]) + 1);
-        setSuggestedNumber(next);
-        setInvoice(inv => ({ ...inv, number: next }));
+      if (issued.error) throw new Error(issued.error.message || 'Could not create the invoice. Please try again.');
+
+      // Download exactly what was recorded.
+      const [inv, lines] = await Promise.all([
+        supabase.from('invoices').select('*').eq('id', issued.data).single(),
+        supabase.from('invoice_items').select('*').eq('invoice_id', issued.data)
+      ]);
+      if (inv.error || lines.error) {
+        setDone('The invoice was recorded, but the PDF couldn’t be made. Download it from the project’s Invoices list.');
+      } else {
+        try {
+          await downloadIssuedInvoice(inv.data, lines.data, project.name);
+          setDone(`Downloaded invoice ${inv.data.number} (${money(Number(inv.data.total))}).`);
+        } catch {
+          setDone(`Invoice ${inv.data.number} was recorded, but the PDF couldn’t be made. Download it from the project’s Invoices list.`);
+        }
       }
+      onIssued();
     } catch (e) {
       setError(e.message || 'Could not create the invoice. Please try again.');
     } finally {
@@ -123,20 +156,36 @@ export default function InvoiceDialog({ project, categories, items, supabase, or
     }
   };
 
+  const itemRow = (key, checked, onToggle, label, detail, qty, amount) => (
+    <li key={key}>
+      <label className="flex items-center gap-3 px-4 py-2 text-sm cursor-pointer hover:bg-slate-50">
+        <input type="checkbox" checked={checked} onChange={onToggle} aria-label={`Include ${label}`} className="h-4 w-4 accent-blue-600" />
+        <span className="flex-1">
+          <span className="text-slate-800">{label}</span>
+          <span className="text-slate-500 text-xs"> · {detail}</span>
+        </span>
+        <span className="text-slate-500 whitespace-nowrap">{qty}</span>
+        <span className="text-slate-800 font-medium whitespace-nowrap w-24 text-right">{amount}</span>
+      </label>
+    </li>
+  );
+
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-start justify-center overflow-y-auto p-4" onClick={onClose}>
       <div role="dialog" aria-modal="true" aria-labelledby="invoice-title"
         className="bg-white rounded-xl shadow-xl w-full max-w-3xl my-8" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
-          <h2 id="invoice-title" className="text-lg font-bold text-slate-800">Create invoice: {project.name}</h2>
+          <h2 id="invoice-title" className="text-lg font-bold text-slate-800">Generate invoice: {project.name}</h2>
           <button onClick={onClose} aria-label="Close invoice" className="text-slate-500 hover:text-slate-800"><X size={20} /></button>
         </div>
 
         {loading ? (
           <p className="px-6 py-8 text-sm text-slate-500">Loading…</p>
+        ) : done ? (
+          <p className="px-6 py-8 text-sm text-green-700" role="status">{done}</p>
         ) : (
           <div className="px-6 py-5 space-y-6">
-            {/* Your details */}
+            {/* Your details: asked for the first time only */}
             <section>
               <div className="flex items-center justify-between mb-2">
                 <h3 className="font-semibold text-slate-800">Your details</h3>
@@ -178,14 +227,15 @@ export default function InvoiceDialog({ project, categories, items, supabase, or
               )}
             </section>
 
-            {/* Client and invoice details */}
+            {/* Client (from the project) and invoice details */}
             <section className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className={labelClass} htmlFor="client-name">Bill to</label>
                 <input id="client-name" className={inputClass} placeholder="Client’s name" value={client.name}
                   onChange={(e) => setClient({ ...client, name: e.target.value })} />
-                <textarea aria-label="Client address or email" rows={3} className={`${inputClass} mt-2`} placeholder="Address or email (optional)"
-                  value={client.details} onChange={(e) => setClient({ ...client, details: e.target.value })} />
+                <textarea aria-label="Client address" rows={3} className={`${inputClass} mt-2`} placeholder="Client’s address (optional)"
+                  value={client.address} onChange={(e) => setClient({ ...client, address: e.target.value })} />
+                <p className="text-xs text-slate-500 mt-1">Saved on the project for next time.</p>
               </div>
               <div className="grid grid-cols-2 gap-3 content-start">
                 <div className="col-span-2">
@@ -206,34 +256,34 @@ export default function InvoiceDialog({ project, categories, items, supabase, or
               </div>
             </section>
 
-            {/* Items */}
+            {/* Everything not yet invoiced */}
             <section>
               <div className="flex items-center justify-between mb-2">
-                <h3 className="font-semibold text-slate-800">Items</h3>
+                <h3 className="font-semibold text-slate-800">Not yet invoiced</h3>
                 <span className="text-sm space-x-3">
                   <button onClick={() => setAll(true)} className="text-blue-700 hover:text-blue-900">Tick all</button>
                   <button onClick={() => setAll(false)} className="text-blue-700 hover:text-blue-900">Untick all</button>
                 </span>
               </div>
-              {items.length === 0 ? (
-                <p className="text-sm text-slate-500">This project has no cost items yet. Add some in its Costs first.</p>
+              {lineCount === 0 ? (
+                <p className="text-sm text-slate-500">Nothing new to invoice: every cost item and all logged time is already on an invoice.</p>
               ) : (
-                <ul className="border border-slate-200 rounded-lg divide-y divide-slate-100 max-h-72 overflow-y-auto">
-                  {items.map(item => (
-                    <li key={item.id}>
-                      <label className="flex items-center gap-3 px-4 py-2 text-sm cursor-pointer hover:bg-slate-50">
-                        <input type="checkbox" checked={!excluded.includes(item.id)} onChange={() => toggleItem(item.id)}
-                          aria-label={`Include ${item.description}`} className="h-4 w-4 accent-blue-600" />
-                        <span className="flex-1">
-                          <span className="text-slate-800">{item.description}</span>
-                          <span className="text-slate-500 text-xs"> · {categoryName(item.category_id)} · {item.status}</span>
-                        </span>
-                        <span className="text-slate-500 whitespace-nowrap">{item.quantity} × {money(item.unit_cost)}</span>
-                        <span className="text-slate-800 font-medium whitespace-nowrap w-24 text-right">{money(item.total)}</span>
-                      </label>
-                    </li>
-                  ))}
+                <ul className="border border-slate-200 rounded-lg divide-y divide-slate-100 max-h-80 overflow-y-auto">
+                  {items.map(item => itemRow(`item-${item.id}`, !excluded.includes(item.id), () => toggle(excluded, setExcluded, item.id),
+                    item.description, `${categoryName(item.category_id)} · ${item.status}`,
+                    `${item.quantity} × ${money(item.unit_cost)}`, money(item.total)))}
+                  {unbilledTime.map(t => {
+                    const r = t.hourly_rate || projectRate;
+                    return itemRow(`time-${t.id}`, !excludedTime.includes(t.id), () => toggle(excludedTime, setExcludedTime, t.id),
+                      `Logged time ${t.entry_date}`, t.note ? `${t.note} · billed when you download` : 'billed when you download',
+                      r ? `${hoursText(t.hours)} h × ${money(r)}` : `${hoursText(t.hours)} h · no rate`, r ? money(Math.round(t.hours * r * 100) / 100) : '—');
+                  })}
                 </ul>
+              )}
+              {chosenTime.length > 0 && (
+                <p className="text-xs text-slate-500 mt-2">
+                  Ticked hours become {chosenTimeLines.length === 1 ? 'one line' : `${chosenTimeLines.length} lines (one per rate)`} on the invoice, in the project’s Staffing category.
+                </p>
               )}
             </section>
 
@@ -250,12 +300,12 @@ export default function InvoiceDialog({ project, categories, items, supabase, or
                 </label>
                 <div>
                   <label className={labelClass} htmlFor="invoice-notes">Notes (optional)</label>
-                  <textarea id="invoice-notes" rows={3} className={inputClass} placeholder="e.g. Thank you for your business"
+                  <textarea id="invoice-notes" rows={3} maxLength={1000} className={inputClass} placeholder="e.g. Thank you for your business"
                     value={invoice.notes} onChange={(e) => setInvoice({ ...invoice, notes: e.target.value })} />
                 </div>
               </div>
               <dl className="bg-slate-50 rounded-lg px-4 py-3 text-sm self-start space-y-1">
-                <div className="flex justify-between"><dt className="text-slate-600">{lines.length} of {items.length} items</dt><dd /></div>
+                <div className="flex justify-between"><dt className="text-slate-600">{chosenCount} of {lineCount} ticked</dt><dd /></div>
                 <div className="flex justify-between"><dt className="text-slate-600">Subtotal</dt><dd>{money(totals.subtotal)}</dd></div>
                 {vatOn && <div className="flex justify-between"><dt className="text-slate-600">VAT ({vatRateValid ? rate : '?'}%)</dt><dd>{money(totals.vat)}</dd></div>}
                 <div className="flex justify-between border-t border-slate-200 pt-1 font-semibold text-slate-800"><dt>Total due</dt><dd>{money(totals.total)}</dd></div>
@@ -263,16 +313,17 @@ export default function InvoiceDialog({ project, categories, items, supabase, or
             </section>
 
             {error && <p className="text-red-600 text-sm" role="alert">{error}</p>}
-            {done && <p className="text-green-700 text-sm" role="status">{done}</p>}
           </div>
         )}
 
         <div className="flex justify-end gap-2 px-6 py-4 border-t border-slate-200">
           <button onClick={onClose} className="bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm hover:bg-slate-300">Close</button>
-          <button onClick={download} disabled={busy || loading || items.length === 0}
-            className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700 disabled:opacity-60">
-            <FileDown size={16} /> {busy ? 'Creating…' : 'Download PDF'}
-          </button>
+          {!done && (
+            <button onClick={download} disabled={busy || loading || lineCount === 0}
+              className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700 disabled:opacity-60">
+              <FileDown size={16} /> {busy ? 'Creating…' : 'Download PDF'}
+            </button>
+          )}
         </div>
       </div>
     </div>

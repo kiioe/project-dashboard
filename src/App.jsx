@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { Calendar, Plus, Trash2, Pencil, TrendingUp, Clock, CheckCircle, AlertCircle } from 'lucide-react';
+import { Calendar, Plus, Trash2, Pencil, TrendingUp, Clock, CheckCircle, AlertCircle, FileText } from 'lucide-react';
 import { Show, SignInButton, UserButton, useUser, useSession, useOrganization, CreateOrganization, OrganizationSwitcher } from '@clerk/react';
 import { createClient } from '@supabase/supabase-js';
 import { MONEY_TYPING, parseMoney, CURRENCIES, DEFAULT_CURRENCY, formatMoney, sumMoney, HOURS_TYPING, parseHours } from './money';
 import CostsPanel, { itemTotals } from './CostsPanel';
 import TasksPanel, { taskProgress } from './TasksPanel';
 import InvoiceDialog from './InvoiceDialog';
+import { downloadIssuedInvoice } from './invoicePdf';
 
 function useSupabaseClient() {
   const { session } = useSession();
@@ -33,7 +34,9 @@ const emptyProject = {
   budget: '',
   spent: '',
   hourlyRate: '',
-  currency: DEFAULT_CURRENCY
+  currency: DEFAULT_CURRENCY,
+  clientName: '',
+  clientAddress: ''
 };
 
 const ProjectDashboard = () => {
@@ -59,12 +62,15 @@ const ProjectDashboard = () => {
   const [tasks, setTasks] = useState([]);
   const [openTasksFor, setOpenTasksFor] = useState(null);
   const [invoiceFor, setInvoiceFor] = useState(null); // project id with the invoice dialog open
+  const [invoices, setInvoices] = useState([]); // issued invoices
+  const [invoiceItems, setInvoiceItems] = useState([]); // the lines on them
 
   useEffect(() => {
     if (organization) {
       fetchProjects();
       fetchCosts();
       fetchTasks();
+      fetchInvoices();
       if (isAdmin) fetchTimeEntries();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -106,6 +112,29 @@ const ProjectDashboard = () => {
       })));
     }
     if (isAdmin) fetchUnbilledTime();
+  };
+
+  // Issued invoices and their lines. A cost item on an issued invoice isn't offered again.
+  const fetchInvoices = async () => {
+    const [inv, lines] = await Promise.all([
+      supabase.from('invoices').select('*').eq('org_id', organization.id).order('id', { ascending: false }),
+      supabase.from('invoice_items').select('*').eq('org_id', organization.id)
+    ]);
+    if (!inv.error) setInvoices(inv.data);
+    if (!lines.error) setInvoiceItems(lines.data);
+  };
+  const invoicesFor = (projectId) => invoices.filter(i => i.project_id === projectId);
+  const invoicedItemIds = new Set(invoiceItems.map(l => l.cost_item_id).filter(Boolean));
+  const uninvoicedItemsFor = (projectId) => costItems.filter(i => i.project_id === projectId && !invoicedItemIds.has(i.id));
+  const unbilledTimeFor = (projectId) => unbilledTime.filter(t => t.project_id === projectId);
+  // How many things a new invoice would pick up: cost items not yet invoiced, plus unbilled logged time.
+  const newToInvoiceFor = (projectId) => uninvoicedItemsFor(projectId).length + unbilledTimeFor(projectId).length;
+  const downloadInvoice = (invoice) =>
+    downloadIssuedInvoice(invoice, invoiceItems, projects.find(p => p.id === invoice.project_id)?.name || '');
+  // After an invoice is issued: it may have billed logged time and saved the client details.
+  const refreshAfterInvoice = async () => {
+    await Promise.all([fetchInvoices(), fetchCosts(), fetchProjects()]);
+    if (isAdmin) fetchTimeEntries();
   };
 
   // Tasks for every project in the organisation. A project's progress comes only from its tasks.
@@ -214,7 +243,9 @@ const ProjectDashboard = () => {
       budget: String(project.budget),
       spent: String(project.spent),
       hourlyRate: Number(project.hourly_rate) ? String(Number(project.hourly_rate)) : '',
-      currency: project.currency
+      currency: project.currency,
+      clientName: project.client_name || '',
+      clientAddress: project.client_address || ''
     });
     setProjectError('');
     setShowAddForm(true);
@@ -258,7 +289,9 @@ const ProjectDashboard = () => {
       budget,
       spent,
       hourly_rate: hourlyRate,
-      currency: newProject.currency
+      currency: newProject.currency,
+      client_name: newProject.clientName.trim(),
+      client_address: newProject.clientAddress.trim()
     };
     const { error } = editingId === null
       ? await supabase.from('projects').insert({ org_id: organization.id, ...details })
@@ -285,6 +318,7 @@ const ProjectDashboard = () => {
     fetchProjects();
     fetchCosts();
     fetchTasks();
+    fetchInvoices();
     if (invoiceFor === id) setInvoiceFor(null);
     if (openTasksFor === id) setOpenTasksFor(null);
   };
@@ -404,6 +438,24 @@ const ProjectDashboard = () => {
   const formSymbol = CURRENCIES[newProject.currency].symbol;
 
   const inputClass = "px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500";
+
+  // One-click invoice for a project, at any status (admins only). Says so when there's nothing new.
+  const GenerateInvoiceButton = ({ project, compact = false }) => {
+    if (!isAdmin) return null;
+    const count = newToInvoiceFor(project.id);
+    return (
+      <button
+        onClick={() => setInvoiceFor(project.id)}
+        disabled={count === 0}
+        title={count === 0 ? 'Every cost item and all logged time is already on an invoice' : `Invoice ${count} new ${count === 1 ? 'line' : 'lines'}`}
+        aria-label={`Generate invoice for ${project.name}`}
+        className={`flex items-center gap-1.5 whitespace-nowrap rounded-lg text-sm disabled:opacity-60 disabled:cursor-not-allowed ${
+          compact ? 'text-blue-700 hover:text-blue-900 disabled:text-slate-500' : 'bg-white border border-blue-300 text-blue-700 px-4 py-2 hover:bg-blue-50'}`}
+      >
+        <FileText size={16} /> {count === 0 ? 'Nothing new to invoice' : 'Generate invoice'}
+      </button>
+    );
+  };
 
   return (
     <>
@@ -575,6 +627,24 @@ const ProjectDashboard = () => {
                   if (MONEY_TYPING.test(e.target.value)) setNewProject({...newProject, hourlyRate: e.target.value});
                 }}
                 className={inputClass}
+              />
+              <input
+                type="text"
+                aria-label="Client name"
+                placeholder="Client name (for invoices)"
+                maxLength={120}
+                value={newProject.clientName}
+                onChange={(e) => setNewProject({...newProject, clientName: e.target.value})}
+                className={inputClass}
+              />
+              <textarea
+                aria-label="Client address"
+                placeholder="Client address (for invoices, optional)"
+                rows={2}
+                maxLength={500}
+                value={newProject.clientAddress}
+                onChange={(e) => setNewProject({...newProject, clientAddress: e.target.value})}
+                className={`${inputClass} md:col-span-2`}
               />
             </div>
             <div className="flex gap-4 mt-4">
@@ -922,7 +992,8 @@ const ProjectDashboard = () => {
                               {(() => {
                                 const hasCosts = itemsFor(project.id).length > 0 || categories.some(c => c.project_id === project.id);
                                 const hasTasks = tasksFor(project.id).length > 0;
-                                return hasCosts && hasTasks ? ' and all its tasks and costs' : hasCosts ? ' and all its costs' : hasTasks ? ' and all its tasks' : '';
+                                const parts = [hasTasks && 'tasks', hasCosts && 'costs', invoicesFor(project.id).length > 0 && 'issued invoices'].filter(Boolean);
+                                return parts.length ? ` and all its ${parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}` : parts[0]}` : '';
                               })()}? This can’t be undone.
                             </p>
                             <div className="flex items-center gap-3">
@@ -943,6 +1014,7 @@ const ProjectDashboard = () => {
                           </div>
                         ) : (
                           <div className="flex items-center gap-3">
+                            <GenerateInvoiceButton project={project} compact />
                             <button
                               onClick={() => startEditing(project)}
                               aria-label={`Edit ${project.name}`}
@@ -992,7 +1064,10 @@ const ProjectDashboard = () => {
                           onChanged={refreshCostsAndTime}
                           unbilledTime={unbilledTime.filter(t => t.project_id === project.id)}
                           onBillTime={billLoggedTime}
-                          onCreateInvoice={() => setInvoiceFor(project.id)}
+                          invoiceButton={<GenerateInvoiceButton project={project} />}
+                          invoices={invoicesFor(project.id)}
+                          invoicedItemIds={invoicedItemIds}
+                          onDownloadInvoice={downloadInvoice}
                         />
                       </td>
                     </tr>
@@ -1008,9 +1083,11 @@ const ProjectDashboard = () => {
         <InvoiceDialog
           project={projects.find(p => p.id === invoiceFor)}
           categories={categories.filter(c => c.project_id === invoiceFor)}
-          items={itemsFor(invoiceFor)}
+          items={uninvoicedItemsFor(invoiceFor)}
+          unbilledTime={unbilledTimeFor(invoiceFor)}
           supabase={supabase}
           orgId={organization.id}
+          onIssued={refreshAfterInvoice}
           onClose={() => setInvoiceFor(null)}
         />
       )}
