@@ -448,8 +448,8 @@ export default function CostsPanel({ project, categories, items, isAdmin, supaba
 
             {catItems.length > 0 && (
               <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
+                <table className="w-full text-sm block sm:table">
+                  <thead className="hidden sm:table-header-group">
                     <tr className="text-left text-slate-500 text-xs">
                       <th className="py-2 px-4 font-medium">Item</th>
                       <th className="py-2 px-4 font-medium">Supplier</th>
@@ -460,10 +460,10 @@ export default function CostsPanel({ project, categories, items, isAdmin, supaba
                       {isAdmin && <th className="py-2 px-4" />}
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="block sm:table-row-group">
                     {catItems.map((item) => editingItem?.id === item.id ? (
-                      <tr key={item.id} className="border-t border-slate-100 bg-blue-50/40">
-                        <td colSpan={isAdmin ? 7 : 6} className="py-3 px-4">
+                      <tr key={item.id} className="block sm:table-row border-t border-slate-100 bg-blue-50/40">
+                        <td colSpan={isAdmin ? 7 : 6} className="block sm:table-cell py-3 px-4">
                           <ItemFields
                             draft={{ ...editingItem.draft, currency: project.currency }}
                             onChange={(changes) => setEditingItem({ ...editingItem, draft: { ...editingItem.draft, ...changes } })}
@@ -475,12 +475,12 @@ export default function CostsPanel({ project, categories, items, isAdmin, supaba
                         </td>
                       </tr>
                     ) : (
-                      <tr key={item.id} className="border-t border-slate-100">
-                        <td className="py-2 px-4 text-slate-800">{item.description}</td>
-                        <td className="py-2 px-4 text-slate-600">{item.supplier || '—'}</td>
-                        <td className="py-2 px-4 text-slate-600 whitespace-nowrap">{item.quantity} × {money(item.unit_cost)}</td>
-                        <td className="py-2 px-4 text-slate-800 font-medium whitespace-nowrap">{money(item.total)}</td>
-                        <td className="py-2 px-4">
+                      <tr key={item.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 sm:p-0 sm:table-row border-t border-slate-100">
+                        <td className="basis-full sm:basis-auto sm:table-cell sm:py-2 sm:px-4 text-slate-800 font-medium sm:font-normal">{item.description}</td>
+                        <td className={`${item.supplier ? '' : 'hidden'} sm:table-cell sm:py-2 sm:px-4 text-slate-600`}>{item.supplier || '—'}</td>
+                        <td className="sm:table-cell sm:py-2 sm:px-4 text-slate-600 whitespace-nowrap">{item.quantity} × {money(item.unit_cost)}</td>
+                        <td className="sm:table-cell sm:py-2 sm:px-4 text-slate-800 font-medium whitespace-nowrap"><span className="sm:hidden">= </span>{money(item.total)}</td>
+                        <td className="sm:table-cell sm:py-2 sm:px-4">
                           {isAdmin ? (
                             <select
                               aria-label={`Status of ${item.description}`}
@@ -494,9 +494,9 @@ export default function CostsPanel({ project, categories, items, isAdmin, supaba
                             <span className={`px-2 py-1 rounded-full text-xs font-medium ${STATUS_STYLES[item.status]}`}>{item.status}</span>
                           )}
                         </td>
-                        <td className="py-2 px-4 text-slate-600 whitespace-nowrap">{item.due_date || '—'}</td>
+                        <td className={`${item.due_date ? '' : 'hidden'} sm:table-cell sm:py-2 sm:px-4 text-slate-600 whitespace-nowrap`}><span className="sm:hidden">Due </span>{item.due_date || '—'}</td>
                         {isAdmin && (
-                          <td className="py-2 px-4">
+                          <td className="ml-auto sm:ml-0 sm:table-cell sm:py-2 sm:px-4">
                             <span className="flex items-center justify-end gap-3">
                               <EditButton label={`Edit item ${item.description}`}
                                 onClick={() => setEditingItem({ id: item.id, draft: itemToDraft(item) })} />

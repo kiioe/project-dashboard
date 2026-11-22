@@ -8,6 +8,7 @@ import CostsPanel, { itemTotals } from './CostsPanel';
 import TasksPanel, { taskProgress } from './TasksPanel';
 import InvoiceDialog from './InvoiceDialog';
 import { downloadIssuedInvoice } from './invoicePdf';
+import { useIsPhone, PhoneShell, ProjectPicker, phoneCard, shortDate } from './PhoneLayout';
 
 function useSupabaseClient() {
   const { session } = useSession();
@@ -207,6 +208,12 @@ const ProjectDashboard = () => {
   const [confirmDeleteId, setConfirmDeleteId] = useState(null); // project waiting for delete confirmation
   const [deleteError, setDeleteError] = useState('');
   const [chartCurrency, setChartCurrency] = useState(DEFAULT_CURRENCY);
+  // Phone layout
+  const isPhone = useIsPhone();
+  const [phoneTab, setPhoneTab] = useState('projects');
+  const [phoneProjectId, setPhoneProjectId] = useState(null); // project shown on the Tasks and Costs tabs
+  const [phoneOpenId, setPhoneOpenId] = useState(null); // project card showing its actions
+  const [projectSearch, setProjectSearch] = useState('');
 
   const calculateMetrics = () => {
     const total = projects.length;
@@ -442,7 +449,290 @@ const ProjectDashboard = () => {
 
   const inputClass = "px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500";
 
+  const invoiceDialogEl = (
+    <>
+      {invoiceFor !== null && isAdmin && projects.some(p => p.id === invoiceFor) && (
+        <InvoiceDialog
+          project={projects.find(p => p.id === invoiceFor)}
+          categories={categories.filter(c => c.project_id === invoiceFor)}
+          items={uninvoicedItemsFor(invoiceFor)}
+          unbilledTime={unbilledTimeFor(invoiceFor)}
+          supabase={supabase}
+          orgId={organization.id}
+          onIssued={refreshAfterInvoice}
+          onClose={() => setInvoiceFor(null)}
+        />
+      )}
+    </>
+  );
+
   // One-click invoice for a project, at any status (admins only). Says so when there's nothing new.
+  // Shared by the desktop and phone layouts.
+  const projectFormEl = showAddForm && isAdmin && (
+    <div className="bg-white p-6 rounded-xl shadow-md border border-slate-200 mb-8">
+      <h2 className="text-xl font-bold text-slate-800 mb-4">
+        {editingId === null ? 'Add New Project' : `Edit Project: ${projects.find(p => p.id === editingId)?.name ?? ''}`}
+      </h2>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <input
+          type="text"
+          placeholder="Project Name"
+          value={newProject.name}
+          onChange={(e) => setNewProject({...newProject, name: e.target.value})}
+          className={inputClass}
+        />
+        <select
+          value={newProject.status}
+          onChange={(e) => setNewProject({...newProject, status: e.target.value})}
+          className={inputClass}
+        >
+          <option>Planning</option>
+          <option>In Progress</option>
+          <option>Completed</option>
+        </select>
+        <input
+          type="date"
+          placeholder="Start Date"
+          value={newProject.startDate}
+          onChange={(e) => setNewProject({...newProject, startDate: e.target.value})}
+          className={inputClass}
+        />
+        <input
+          type="date"
+          placeholder="End Date"
+          value={newProject.endDate}
+          onChange={(e) => setNewProject({...newProject, endDate: e.target.value})}
+          className={inputClass}
+        />
+        <input
+          type="text"
+          placeholder="Project Owner"
+          value={newProject.owner}
+          onChange={(e) => setNewProject({...newProject, owner: e.target.value})}
+          className={inputClass}
+        />
+        <select
+          aria-label="Currency"
+          value={newProject.currency}
+          disabled={currencyLocked}
+          title={currencyLocked ? 'Currency can’t change once the project has cost categories' : undefined}
+          onChange={(e) => setNewProject({...newProject, currency: e.target.value})}
+          className={`${inputClass} disabled:bg-slate-100 disabled:text-slate-500`}
+        >
+          {Object.entries(CURRENCIES).map(([code, c]) => (
+            <option key={code} value={code}>Currency: {c.label}</option>
+          ))}
+        </select>
+        <input
+          type="text"
+          inputMode="decimal"
+          placeholder={`Budget in ${formSymbol} (0 if free)`}
+          value={newProject.budget}
+          onChange={(e) => {
+            if (MONEY_TYPING.test(e.target.value)) setNewProject({...newProject, budget: e.target.value});
+          }}
+          className={inputClass}
+        />
+        <p className="text-sm text-slate-500 self-center">
+          Progress comes from the project’s tasks{editingId === null ? ' (add them after saving, using Tasks in Project Details)' : ''}.
+        </p>
+        <input
+          type="text"
+          inputMode="decimal"
+          placeholder={`Spent so far, not itemised, in ${formSymbol} (0 if none)`}
+          value={newProject.spent}
+          onChange={(e) => {
+            if (MONEY_TYPING.test(e.target.value)) setNewProject({...newProject, spent: e.target.value});
+          }}
+          className={inputClass}
+        />
+        <input
+          type="text"
+          inputMode="decimal"
+          placeholder={`Hourly Rate in ${formSymbol} (for time tracking)`}
+          value={newProject.hourlyRate}
+          onChange={(e) => {
+            if (MONEY_TYPING.test(e.target.value)) setNewProject({...newProject, hourlyRate: e.target.value});
+          }}
+          className={inputClass}
+        />
+        <input
+          type="text"
+          aria-label="Client name"
+          placeholder="Client name (for invoices)"
+          maxLength={120}
+          value={newProject.clientName}
+          onChange={(e) => setNewProject({...newProject, clientName: e.target.value})}
+          className={inputClass}
+        />
+        <textarea
+          aria-label="Client address"
+          placeholder="Client address (for invoices, optional)"
+          rows={2}
+          maxLength={500}
+          value={newProject.clientAddress}
+          onChange={(e) => setNewProject({...newProject, clientAddress: e.target.value})}
+          className={`${inputClass} md:col-span-2`}
+        />
+      </div>
+      <div className="flex gap-4 mt-4">
+        <button
+          onClick={saveProject}
+          className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+        >
+          {editingId === null ? 'Save Project' : 'Save Changes'}
+        </button>
+        <button
+          onClick={closeProjectForm}
+          className="bg-slate-200 text-slate-700 px-6 py-2 rounded-lg hover:bg-slate-300 transition-colors"
+        >
+          Cancel
+        </button>
+      </div>
+      {currencyLocked && (
+        <p className="text-slate-500 text-sm mt-3">The currency is fixed because this project already has cost categories.</p>
+      )}
+      {projectError && <p className="text-red-600 text-sm mt-3">{projectError}</p>}
+    </div>
+  );
+
+  const timeFormEl = (
+    <>
+      {projects.length === 0 ? (
+        <p className="text-slate-500 text-sm">Add a project first, then you can log time against it.</p>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+          <select
+            value={newEntry.projectId}
+            onChange={(e) => setNewEntry({...newEntry, projectId: e.target.value})}
+            className={inputClass}
+          >
+            <option value="">Select project</option>
+            {projects.map(p => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+          <input
+            type="date"
+            value={newEntry.date}
+            onChange={(e) => setNewEntry({...newEntry, date: e.target.value})}
+            className={inputClass}
+          />
+          <input
+            type="text"
+            inputMode="decimal"
+            placeholder="Hours"
+            value={newEntry.hours}
+            onChange={(e) => {
+              if (HOURS_TYPING.test(e.target.value)) setNewEntry({...newEntry, hours: e.target.value});
+            }}
+            className={inputClass}
+          />
+          <input
+            type="text"
+            placeholder="Note (optional)"
+            value={newEntry.note}
+            onChange={(e) => setNewEntry({...newEntry, note: e.target.value})}
+            className={inputClass}
+          />
+          <button
+            onClick={addTimeEntry}
+            className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            Log Time
+          </button>
+        </div>
+      )}
+
+      {timeError && <p className="text-red-600 text-sm mt-3">{timeError}</p>}
+    </>
+  );
+
+  const entryEditFields = (entry) => (
+    <>
+    <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
+      <input
+        type="date"
+        aria-label="Entry date"
+        value={editingEntry.date}
+        onChange={(e) => setEditingEntry({ ...editingEntry, date: e.target.value })}
+        className={inputClass}
+      />
+      <select
+        aria-label="Entry project"
+        value={editingEntry.projectId}
+        onChange={(e) => setEditingEntry({ ...editingEntry, projectId: e.target.value })}
+        className={inputClass}
+      >
+        {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+      </select>
+      <input
+        type="text"
+        inputMode="decimal"
+        aria-label="Entry hours"
+        placeholder="Hours"
+        value={editingEntry.hours}
+        onChange={(e) => {
+          if (HOURS_TYPING.test(e.target.value)) setEditingEntry({ ...editingEntry, hours: e.target.value });
+        }}
+        className={inputClass}
+      />
+      <input
+        type="text"
+        aria-label="Entry note"
+        placeholder="Note (optional)"
+        value={editingEntry.note}
+        onChange={(e) => setEditingEntry({ ...editingEntry, note: e.target.value })}
+        className={inputClass}
+      />
+      <div className="flex gap-2">
+        <button onClick={saveTimeEntry} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700">
+          Save
+        </button>
+        <button onClick={() => { setEditingEntry(null); setEntryError(''); }} className="bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm hover:bg-slate-300">
+          Cancel
+        </button>
+      </div>
+    </div>
+    {String(editingEntry.projectId) !== String(entry.project_id) && (
+      <p className="text-slate-500 text-xs mt-2">Moving these hours to another project uses that project’s hourly rate.</p>
+    )}
+    {entryError && <p className="text-red-600 text-sm mt-2" role="alert">{entryError}</p>}
+    </>
+  );
+
+  const entryActions = (entry) => (
+    <>
+    {entry.cost_item_id ? (
+      <span
+        className="px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800"
+        title="These hours are on a cost item. Edit that item in the project's Costs, or delete it to unbill and edit these hours."
+      >
+        Billed
+      </span>
+    ) : entry.user_id === user.id && (
+      <div className="flex items-center gap-3">
+        <button
+          onClick={() => startEditingEntry(entry)}
+          aria-label={`Edit time entry ${entry.entry_date}, ${Number(entry.hours)} h`}
+          title="Edit time entry"
+          className="text-blue-600 hover:text-blue-800 transition-colors"
+        >
+          <Pencil size={18} />
+        </button>
+        <button
+          onClick={() => deleteTimeEntry(entry.id)}
+          aria-label="Delete time entry"
+          title="Delete time entry"
+          className="text-red-600 hover:text-red-800 transition-colors"
+        >
+          <Trash2 size={18} />
+        </button>
+      </div>
+    )}
+    </>
+  );
+
   const GenerateInvoiceButton = ({ project, compact = false }) => {
     if (!isAdmin) return null;
     const count = newToInvoiceFor(project.id);
@@ -460,12 +750,239 @@ const ProjectDashboard = () => {
     );
   };
 
+  // ---- Phone layout (below 768px wide): compact header, one section at a time, bottom tabs ----
+  const renderPhone = () => {
+    const pickedId = projects.some(p => p.id === phoneProjectId) ? phoneProjectId : projects[0]?.id ?? null;
+    const picked = projects.find(p => p.id === pickedId);
+    const openIn = (tab, projectId) => { setPhoneProjectId(projectId); setPhoneTab(tab); window.scrollTo(0, 0); };
+    const q = projectSearch.trim().toLowerCase();
+    const shown = q ? projects.filter(p => `${p.name} ${p.client_name || ''} ${p.owner || ''}`.toLowerCase().includes(q)) : projects;
+    const counts = [
+      ['Planning', projects.filter(p => p.status === 'Planning').length],
+      ['In progress', metrics.inProgress],
+      ['Done', metrics.completed],
+    ];
+    const smallBtn = 'min-h-[44px] px-3 rounded-lg text-sm font-medium';
+    const noProjects = <p className="text-slate-500 text-sm">No projects yet.{isAdmin ? ' Add one on the Projects tab.' : ''}</p>;
+
+    const header = (
+      <>
+        <span className="font-bold text-lg tracking-wide text-slate-900">SQNCE</span>
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="min-w-0 max-w-[60vw] overflow-hidden"><OrganizationSwitcher /></div>
+          <UserButton />
+        </div>
+      </>
+    );
+
+    const projectsTab = (
+      <>
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-bold">Projects</h1>
+          {isAdmin && (
+            <button onClick={openNewProjectForm} className={`${smallBtn} flex items-center gap-1 bg-blue-600 text-white px-4`}>
+              <Plus size={18} aria-hidden="true" /> New
+            </button>
+          )}
+        </div>
+        {projectFormEl}
+        <div className="grid grid-cols-3 gap-2">
+          {counts.map(([label, n]) => (
+            <div key={label} className="bg-white border border-slate-200 rounded-xl px-3 py-2">
+              <div className="text-xs text-slate-600">{label}</div>
+              <div className="text-xl font-bold">{n}</div>
+            </div>
+          ))}
+        </div>
+        {projects.length > 3 && (
+          <label className="flex flex-col gap-1 text-sm text-slate-600">
+            Search projects
+            <input type="search" value={projectSearch} onChange={(e) => setProjectSearch(e.target.value)}
+              placeholder="Name, client or owner"
+              className="min-h-[44px] px-3 border border-slate-300 rounded-lg bg-white text-base text-slate-900" />
+          </label>
+        )}
+        {loading && <p className="text-slate-500 text-sm">Loading projects...</p>}
+        {!loading && projects.length === 0 && noProjects}
+        {!loading && q && shown.length === 0 && <p className="text-slate-500 text-sm">No projects match “{projectSearch}”.</p>}
+        {shown.map(project => {
+          const done = tasksFor(project.id).filter(t => t.done).length;
+          const total = tasksFor(project.id).length;
+          const open = phoneOpenId === project.id;
+          return (
+            <div key={project.id} className={`${phoneCard} space-y-3`}>
+              <button onClick={() => setPhoneOpenId(open ? null : project.id)} aria-expanded={open}
+                className="w-full text-left space-y-2">
+                <div className="flex items-start justify-between gap-2">
+                  <span className="font-semibold text-base">{project.name}</span>
+                  <span className={`shrink-0 px-2.5 py-1 rounded-full text-xs font-semibold ${getStatusColor(project.status)}`}>{project.status}</span>
+                </div>
+                <div className="text-sm text-slate-600">
+                  {[project.endDate && shortDate(project.endDate), `${done} of ${total} ${total === 1 ? 'task' : 'tasks'}`].filter(Boolean).join(' · ')}
+                </div>
+                <div className="h-2 rounded bg-slate-200" aria-hidden="true">
+                  <div className="h-2 rounded bg-blue-600" style={{ width: `${progressFor(project)}%` }} />
+                </div>
+                <div className="text-sm text-slate-600">
+                  {formatMoney(spentFor(project), project.currency)} spent of {formatMoney(project.budget, project.currency)}
+                </div>
+              </button>
+              {open && (
+                <div className="border-t border-slate-100 pt-3 space-y-3">
+                  {(project.client_name || project.owner || project.startDate) && (
+                    <dl className="text-sm text-slate-600 space-y-1">
+                      {project.client_name && <div><dt className="inline font-medium text-slate-700">Client: </dt><dd className="inline">{project.client_name}</dd></div>}
+                      {project.owner && <div><dt className="inline font-medium text-slate-700">Owner: </dt><dd className="inline">{project.owner}</dd></div>}
+                      {project.startDate && <div><dt className="inline font-medium text-slate-700">Dates: </dt><dd className="inline">{shortDate(project.startDate)} to {shortDate(project.endDate)}</dd></div>}
+                    </dl>
+                  )}
+                  <div className="flex flex-wrap gap-2">
+                    <button onClick={() => openIn('tasks', project.id)} className={`${smallBtn} bg-slate-100 text-slate-800`}>Tasks</button>
+                    <button onClick={() => openIn('costs', project.id)} className={`${smallBtn} bg-slate-100 text-slate-800`}>Costs</button>
+                    {isAdmin && (
+                      <>
+                        <button onClick={() => { startEditing(project); window.scrollTo(0, 0); }} className={`${smallBtn} bg-slate-100 text-slate-800`}>Edit</button>
+                        <button onClick={() => { setConfirmDeleteId(project.id); setDeleteError(''); }} className={`${smallBtn} text-red-700`}>Delete</button>
+                      </>
+                    )}
+                  </div>
+                  {isAdmin && <GenerateInvoiceButton project={project} />}
+                  {confirmDeleteId === project.id && (
+                    <div className="text-sm bg-red-50 rounded-lg p-3" role="alert">
+                      <p className="text-slate-700 mb-2">
+                        Delete <strong>{project.name}</strong> and all its tasks and costs? This can’t be undone.
+                        {invoicesFor(project.id).length > 0 && ' Its issued invoices are kept.'}
+                      </p>
+                      <div className="flex gap-2">
+                        <button onClick={() => deleteProject(project.id)} className={`${smallBtn} bg-red-600 text-white`}>Delete</button>
+                        <button onClick={() => { setConfirmDeleteId(null); setDeleteError(''); }} className={`${smallBtn} bg-white border border-slate-300`}>Keep</button>
+                      </div>
+                      {deleteError && <p className="text-red-600 text-xs mt-2">{deleteError}</p>}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+        {invoices.length > 0 && (
+          <section className={phoneCard}>
+            <h2 className="font-semibold mb-1">Invoices</h2>
+            <p className="text-xs text-slate-500 mb-2">Newest first. Kept even if their project is deleted.</p>
+            <ul className="divide-y divide-slate-100">
+              {invoices.map(inv => {
+                const live = projects.find(p => p.id === inv.project_id);
+                return (
+                  <li key={inv.id} className="flex items-center justify-between gap-3 py-2">
+                    <span className="min-w-0">
+                      <span className="block font-medium text-sm">{inv.number} · {formatMoney(Number(inv.total), inv.currency)}</span>
+                      <span className="block text-xs text-slate-500 truncate">
+                        {shortDate(inv.issue_date)} · {live ? live.name : `${inv.project_name} (deleted)`}
+                      </span>
+                    </span>
+                    <button onClick={() => downloadInvoice(inv)} aria-label={`Download invoice ${inv.number}`}
+                      className={`${smallBtn} shrink-0 text-blue-700`}>PDF</button>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        )}
+      </>
+    );
+
+    const tasksTab = (
+      <>
+        <h1 className="text-2xl font-bold">Tasks</h1>
+        {!picked ? noProjects : (
+          <>
+            <ProjectPicker projects={projects} value={pickedId} onChange={setPhoneProjectId} />
+            <TasksPanel project={picked} tasks={tasksFor(picked.id)} isAdmin={isAdmin}
+              supabase={supabase} orgId={organization.id} onChanged={refreshTasks} />
+          </>
+        )}
+      </>
+    );
+
+    const costsTab = (
+      <>
+        <h1 className="text-2xl font-bold">Costs</h1>
+        {!picked ? noProjects : (
+          <>
+            <ProjectPicker projects={projects} value={pickedId} onChange={setPhoneProjectId} />
+            <CostsPanel
+              project={picked}
+              categories={categories.filter(c => c.project_id === picked.id)}
+              items={itemsFor(picked.id)}
+              isAdmin={isAdmin}
+              supabase={supabase}
+              orgId={organization.id}
+              onChanged={refreshCostsAndTime}
+              unbilledTime={unbilledTime.filter(t => t.project_id === picked.id)}
+              onBillTime={billLoggedTime}
+              invoiceButton={<GenerateInvoiceButton project={picked} />}
+              invoices={invoicesFor(picked.id)}
+              itemInvoice={itemInvoice}
+              onDownloadInvoice={downloadInvoice}
+            />
+          </>
+        )}
+      </>
+    );
+
+    const timeTab = (
+      <>
+        <h1 className="text-2xl font-bold">Time</h1>
+        {!isAdmin ? (
+          <p className="text-slate-500 text-sm">Time tracking is for organisation admins at the moment.</p>
+        ) : (
+          <>
+            <section className={phoneCard}>
+              <h2 className="font-semibold mb-3">Log time</h2>
+              {timeFormEl}
+            </section>
+            {timeEntries.length === 0 ? (
+              <p className="text-slate-500 text-sm">No time logged yet.</p>
+            ) : (
+              <ul className={`${phoneCard} p-0 divide-y divide-slate-100`}>
+                {timeEntries.map(entry => (
+                  <li key={entry.id} className="px-4 py-3">
+                    {editingEntry?.id === entry.id ? entryEditFields(entry) : (
+                      <div className="flex items-start justify-between gap-3">
+                        <span className="min-w-0">
+                          <span className="block text-sm font-medium">{entry.note || 'No note'}</span>
+                          <span className="block text-xs text-slate-500">
+                            {projectName(entry.project_id)} · {shortDate(entry.entry_date)}{entry.user_id === user.id ? '' : ' · Teammate'}
+                          </span>
+                        </span>
+                        <span className="flex flex-col items-end gap-1 shrink-0">
+                          <span className="text-sm font-semibold">{Number(entry.hours).toFixed(2)} h</span>
+                          <span className="flex items-center gap-3">{entryActions(entry)}</span>
+                        </span>
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
+        )}
+      </>
+    );
+
+    return (
+      <PhoneShell header={header} tab={phoneTab} onTab={setPhoneTab}>
+        {{ projects: projectsTab, tasks: tasksTab, costs: costsTab, time: timeTab }[phoneTab]}
+      </PhoneShell>
+    );
+  };
+
   return (
     <>
       <Show when="signed-out">
         <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center p-8">
           <div className="bg-white p-10 rounded-xl shadow-md border border-slate-200 text-center max-w-sm">
-            <h1 className="text-2xl font-bold text-slate-800 mb-2">Project Dashboard</h1>
+            <h1 className="text-2xl font-bold text-slate-800 mb-2">SQNCE</h1>
             <p className="text-slate-600 mb-6">Please sign in to view your projects</p>
             <SignInButton mode="modal">
               <button className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors shadow-lg">
@@ -484,13 +1001,18 @@ const ProjectDashboard = () => {
             <CreateOrganization />
           </div>
         </div>
+      ) : isPhone ? (
+        <>
+          {renderPhone()}
+          {invoiceDialogEl}
+        </>
       ) : (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-8">
       <div className="max-w-7xl mx-auto">
         <div className="flex justify-between items-center mb-8">
           <div>
-            <h1 className="text-4xl font-bold text-slate-800 mb-2">Project Dashboard</h1>
-            <p className="text-slate-600">Track and manage your projects in real-time</p>
+            <h1 className="text-4xl font-bold text-slate-800 mb-2">SQNCE</h1>
+            <p className="text-slate-600">Your events: tasks, costs, time and invoices in one place</p>
           </div>
           <div className="flex items-center gap-4">
             <OrganizationSwitcher />
@@ -543,133 +1065,7 @@ const ProjectDashboard = () => {
         </div>
 
         {/* Add Project Form */}
-        {showAddForm && isAdmin && (
-          <div className="bg-white p-6 rounded-xl shadow-md border border-slate-200 mb-8">
-            <h2 className="text-xl font-bold text-slate-800 mb-4">
-              {editingId === null ? 'Add New Project' : `Edit Project: ${projects.find(p => p.id === editingId)?.name ?? ''}`}
-            </h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <input
-                type="text"
-                placeholder="Project Name"
-                value={newProject.name}
-                onChange={(e) => setNewProject({...newProject, name: e.target.value})}
-                className={inputClass}
-              />
-              <select
-                value={newProject.status}
-                onChange={(e) => setNewProject({...newProject, status: e.target.value})}
-                className={inputClass}
-              >
-                <option>Planning</option>
-                <option>In Progress</option>
-                <option>Completed</option>
-              </select>
-              <input
-                type="date"
-                placeholder="Start Date"
-                value={newProject.startDate}
-                onChange={(e) => setNewProject({...newProject, startDate: e.target.value})}
-                className={inputClass}
-              />
-              <input
-                type="date"
-                placeholder="End Date"
-                value={newProject.endDate}
-                onChange={(e) => setNewProject({...newProject, endDate: e.target.value})}
-                className={inputClass}
-              />
-              <input
-                type="text"
-                placeholder="Project Owner"
-                value={newProject.owner}
-                onChange={(e) => setNewProject({...newProject, owner: e.target.value})}
-                className={inputClass}
-              />
-              <select
-                aria-label="Currency"
-                value={newProject.currency}
-                disabled={currencyLocked}
-                title={currencyLocked ? 'Currency can’t change once the project has cost categories' : undefined}
-                onChange={(e) => setNewProject({...newProject, currency: e.target.value})}
-                className={`${inputClass} disabled:bg-slate-100 disabled:text-slate-500`}
-              >
-                {Object.entries(CURRENCIES).map(([code, c]) => (
-                  <option key={code} value={code}>Currency: {c.label}</option>
-                ))}
-              </select>
-              <input
-                type="text"
-                inputMode="decimal"
-                placeholder={`Budget in ${formSymbol} (0 if free)`}
-                value={newProject.budget}
-                onChange={(e) => {
-                  if (MONEY_TYPING.test(e.target.value)) setNewProject({...newProject, budget: e.target.value});
-                }}
-                className={inputClass}
-              />
-              <p className="text-sm text-slate-500 self-center">
-                Progress comes from the project’s tasks{editingId === null ? ' (add them after saving, using Tasks in Project Details)' : ''}.
-              </p>
-              <input
-                type="text"
-                inputMode="decimal"
-                placeholder={`Spent so far, not itemised, in ${formSymbol} (0 if none)`}
-                value={newProject.spent}
-                onChange={(e) => {
-                  if (MONEY_TYPING.test(e.target.value)) setNewProject({...newProject, spent: e.target.value});
-                }}
-                className={inputClass}
-              />
-              <input
-                type="text"
-                inputMode="decimal"
-                placeholder={`Hourly Rate in ${formSymbol} (for time tracking)`}
-                value={newProject.hourlyRate}
-                onChange={(e) => {
-                  if (MONEY_TYPING.test(e.target.value)) setNewProject({...newProject, hourlyRate: e.target.value});
-                }}
-                className={inputClass}
-              />
-              <input
-                type="text"
-                aria-label="Client name"
-                placeholder="Client name (for invoices)"
-                maxLength={120}
-                value={newProject.clientName}
-                onChange={(e) => setNewProject({...newProject, clientName: e.target.value})}
-                className={inputClass}
-              />
-              <textarea
-                aria-label="Client address"
-                placeholder="Client address (for invoices, optional)"
-                rows={2}
-                maxLength={500}
-                value={newProject.clientAddress}
-                onChange={(e) => setNewProject({...newProject, clientAddress: e.target.value})}
-                className={`${inputClass} md:col-span-2`}
-              />
-            </div>
-            <div className="flex gap-4 mt-4">
-              <button
-                onClick={saveProject}
-                className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                {editingId === null ? 'Save Project' : 'Save Changes'}
-              </button>
-              <button
-                onClick={closeProjectForm}
-                className="bg-slate-200 text-slate-700 px-6 py-2 rounded-lg hover:bg-slate-300 transition-colors"
-              >
-                Cancel
-              </button>
-            </div>
-            {currencyLocked && (
-              <p className="text-slate-500 text-sm mt-3">The currency is fixed because this project already has cost categories.</p>
-            )}
-            {projectError && <p className="text-red-600 text-sm mt-3">{projectError}</p>}
-          </div>
-        )}
+        {projectFormEl}
 
         {/* Gantt Chart */}
         <div className="bg-white p-6 rounded-xl shadow-md border border-slate-200 mb-8">
@@ -761,53 +1157,7 @@ const ProjectDashboard = () => {
               Time Tracking
             </h2>
 
-            {projects.length === 0 ? (
-              <p className="text-slate-500 text-sm">Add a project first, then you can log time against it.</p>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-                <select
-                  value={newEntry.projectId}
-                  onChange={(e) => setNewEntry({...newEntry, projectId: e.target.value})}
-                  className={inputClass}
-                >
-                  <option value="">Select project</option>
-                  {projects.map(p => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
-                </select>
-                <input
-                  type="date"
-                  value={newEntry.date}
-                  onChange={(e) => setNewEntry({...newEntry, date: e.target.value})}
-                  className={inputClass}
-                />
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  placeholder="Hours"
-                  value={newEntry.hours}
-                  onChange={(e) => {
-                    if (HOURS_TYPING.test(e.target.value)) setNewEntry({...newEntry, hours: e.target.value});
-                  }}
-                  className={inputClass}
-                />
-                <input
-                  type="text"
-                  placeholder="Note (optional)"
-                  value={newEntry.note}
-                  onChange={(e) => setNewEntry({...newEntry, note: e.target.value})}
-                  className={inputClass}
-                />
-                <button
-                  onClick={addTimeEntry}
-                  className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors"
-                >
-                  Log Time
-                </button>
-              </div>
-            )}
-
-            {timeError && <p className="text-red-600 text-sm mt-3">{timeError}</p>}
+            {timeFormEl}
 
             <div className="overflow-x-auto mt-6">
               {timeEntries.length === 0 ? (
@@ -828,54 +1178,7 @@ const ProjectDashboard = () => {
                     {timeEntries.map((entry) => editingEntry?.id === entry.id ? (
                       <tr key={entry.id} className="border-b border-slate-100 bg-blue-50/40">
                         <td colSpan={6} className="py-3 px-4">
-                          <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
-                            <input
-                              type="date"
-                              aria-label="Entry date"
-                              value={editingEntry.date}
-                              onChange={(e) => setEditingEntry({ ...editingEntry, date: e.target.value })}
-                              className={inputClass}
-                            />
-                            <select
-                              aria-label="Entry project"
-                              value={editingEntry.projectId}
-                              onChange={(e) => setEditingEntry({ ...editingEntry, projectId: e.target.value })}
-                              className={inputClass}
-                            >
-                              {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                            </select>
-                            <input
-                              type="text"
-                              inputMode="decimal"
-                              aria-label="Entry hours"
-                              placeholder="Hours"
-                              value={editingEntry.hours}
-                              onChange={(e) => {
-                                if (HOURS_TYPING.test(e.target.value)) setEditingEntry({ ...editingEntry, hours: e.target.value });
-                              }}
-                              className={inputClass}
-                            />
-                            <input
-                              type="text"
-                              aria-label="Entry note"
-                              placeholder="Note (optional)"
-                              value={editingEntry.note}
-                              onChange={(e) => setEditingEntry({ ...editingEntry, note: e.target.value })}
-                              className={inputClass}
-                            />
-                            <div className="flex gap-2">
-                              <button onClick={saveTimeEntry} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700">
-                                Save
-                              </button>
-                              <button onClick={() => { setEditingEntry(null); setEntryError(''); }} className="bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm hover:bg-slate-300">
-                                Cancel
-                              </button>
-                            </div>
-                          </div>
-                          {String(editingEntry.projectId) !== String(entry.project_id) && (
-                            <p className="text-slate-500 text-xs mt-2">Moving these hours to another project uses that project’s hourly rate.</p>
-                          )}
-                          {entryError && <p className="text-red-600 text-sm mt-2" role="alert">{entryError}</p>}
+                          {entryEditFields(entry)}
                         </td>
                       </tr>
                     ) : (
@@ -888,33 +1191,7 @@ const ProjectDashboard = () => {
                           {entry.user_id === user.id ? 'You' : 'Teammate'}
                         </td>
                         <td className="py-3 px-4">
-                          {entry.cost_item_id ? (
-                            <span
-                              className="px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800"
-                              title="These hours are on a cost item. Edit that item in the project's Costs, or delete it to unbill and edit these hours."
-                            >
-                              Billed
-                            </span>
-                          ) : entry.user_id === user.id && (
-                            <div className="flex items-center gap-3">
-                              <button
-                                onClick={() => startEditingEntry(entry)}
-                                aria-label={`Edit time entry ${entry.entry_date}, ${Number(entry.hours)} h`}
-                                title="Edit time entry"
-                                className="text-blue-600 hover:text-blue-800 transition-colors"
-                              >
-                                <Pencil size={18} />
-                              </button>
-                              <button
-                                onClick={() => deleteTimeEntry(entry.id)}
-                                aria-label="Delete time entry"
-                                title="Delete time entry"
-                                className="text-red-600 hover:text-red-800 transition-colors"
-                              >
-                                <Trash2 size={18} />
-                              </button>
-                            </div>
-                          )}
+                          {entryActions(entry)}
                         </td>
                       </tr>
                     ))}
@@ -1125,18 +1402,7 @@ const ProjectDashboard = () => {
           </div>
         )}
       </div>
-      {invoiceFor !== null && isAdmin && projects.some(p => p.id === invoiceFor) && (
-        <InvoiceDialog
-          project={projects.find(p => p.id === invoiceFor)}
-          categories={categories.filter(c => c.project_id === invoiceFor)}
-          items={uninvoicedItemsFor(invoiceFor)}
-          unbilledTime={unbilledTimeFor(invoiceFor)}
-          supabase={supabase}
-          orgId={organization.id}
-          onIssued={refreshAfterInvoice}
-          onClose={() => setInvoiceFor(null)}
-        />
-      )}
+      {invoiceDialogEl}
     </div>
       )}
       </Show>
