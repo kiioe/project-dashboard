@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Plus, Trash2, Pencil, Clock, FileDown, X } from 'lucide-react';
 import { MONEY_TYPING, parseMoney, CURRENCIES, formatMoney, sumMoney } from './money';
+import { AddButton, BottomSheet } from './PhoneLayout';
 
 export const ITEM_STATUSES = ['Quoted', 'Booked', 'Invoiced', 'Paid'];
 // An item counts as committed once it's booked; "Quoted" is only an estimate.
@@ -84,7 +85,10 @@ function ItemFields({ draft, onChange, symbol, onSave, onCancel, saveLabel }) {
 
 // Shows one project's cost categories and the items inside them.
 // Everyone in the organisation can view; only admins can add, change or delete.
-export default function CostsPanel({ project, categories, items, isAdmin, supabase, orgId, onChanged, unbilledTime = [], onBillTime, invoiceButton = null, invoices = [], itemInvoice = new Map(), onDownloadInvoice }) {
+export default function CostsPanel({ project, categories, items, isAdmin, supabase, orgId, onChanged, unbilledTime = [], onBillTime, invoiceButton = null, invoices = [], itemInvoice = new Map(), onDownloadInvoice, phone = false }) {
+  // phone: adding happens in a panel opened by the round + button ('choose' | 'item' | 'category').
+  const [sheet, setSheet] = useState(null);
+  const [sheetCategoryId, setSheetCategoryId] = useState(null);
   const money = (n) => formatMoney(n, project.currency);
   const symbol = CURRENCIES[project.currency].symbol;
   const [error, setError] = useState('');
@@ -162,6 +166,7 @@ export default function CostsPanel({ project, categories, items, isAdmin, supaba
     if (budget === null) return setError('Category budget must be 0 or more, with up to 2 decimal places.');
     const ok = await run(supabase.from('project_categories').insert({ org_id: orgId, project_id: project.id, name, budget }));
     if (ok) setNewCategory({ name: '', budget: '' });
+    return ok;
   };
 
   const saveCategory = async () => {
@@ -187,6 +192,7 @@ export default function CostsPanel({ project, categories, items, isAdmin, supaba
       setNewItems({ ...newItems, [categoryId]: emptyItem });
       setAddingItemTo(null);
     }
+    return ok;
   };
 
   const saveItem = async () => {
@@ -387,7 +393,7 @@ export default function CostsPanel({ project, categories, items, isAdmin, supaba
 
       {categories.length === 0 && (
         <p className="text-slate-500 text-sm">
-          No cost categories yet.{isAdmin ? ' Add one below, e.g. Venue or Catering, then add items to it.' : ''}
+          No cost categories yet.{isAdmin ? (phone ? ' Tap + to add one, e.g. Venue or Catering, then add items to it.' : ' Add one below, e.g. Venue or Catering, then add items to it.') : ''}
         </p>
       )}
 
@@ -515,7 +521,7 @@ export default function CostsPanel({ project, categories, items, isAdmin, supaba
               </div>
             )}
 
-            {isAdmin && (addingItemTo === category.id ? (
+            {isAdmin && !phone && (addingItemTo === category.id ? (
               <div className="px-4 py-3 border-t border-slate-100">
                 <ItemFields
                   draft={{ ...draftFor(category.id), currency: project.currency }}
@@ -537,7 +543,7 @@ export default function CostsPanel({ project, categories, items, isAdmin, supaba
       })}
 
       {/* New category */}
-      {isAdmin && (
+      {isAdmin && !phone && (
         <div className="flex flex-wrap items-center gap-2">
           <input aria-label="New category name" list={`category-suggestions-${project.id}`} placeholder="New category, e.g. Catering"
             value={newCategory.name} onChange={(e) => setNewCategory({ ...newCategory, name: e.target.value })} className={inputClass} />
@@ -555,6 +561,69 @@ export default function CostsPanel({ project, categories, items, isAdmin, supaba
       )}
 
       {error && <p className="text-red-600 text-sm" role="alert">{error}</p>}
+
+      {isAdmin && phone && (() => {
+        const catId = categories.some(c => c.id === sheetCategoryId) ? sheetCategoryId : categories[0]?.id;
+        const close = () => { setSheet(null); setError(''); };
+        const big = 'min-h-[52px] w-full rounded-xl border border-slate-200 px-4 text-left text-base font-medium text-slate-800';
+        return (
+          <>
+            <AddButton label="Add to costs" onClick={() => { setError(''); setNotice(''); setSheet(categories.length ? 'choose' : 'category'); }} />
+            <BottomSheet open={sheet === 'choose'} title="Add to costs" onClose={close}>
+              <div className="space-y-2">
+                <button onClick={() => setSheet('item')} className={big}>Add cost item</button>
+                <button onClick={() => setSheet('category')} className={big}>Add category</button>
+              </div>
+            </BottomSheet>
+            <BottomSheet open={sheet === 'item'} title="New cost item" onClose={close}>
+              <div className="space-y-3">
+                <label className="flex flex-col gap-1 text-sm text-slate-600">
+                  Category
+                  <select value={catId ?? ''} onChange={(e) => setSheetCategoryId(Number(e.target.value) || e.target.value)}
+                    className={`${inputClass} min-h-[44px] text-slate-900`}>
+                    {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                </label>
+                {catId != null && (
+                  <ItemFields
+                    draft={{ ...draftFor(catId), currency: project.currency }}
+                    onChange={(changes) => setDraft(catId, changes)}
+                    symbol={symbol}
+                    onSave={async () => { if (await addItem(catId)) close(); }}
+                    onCancel={close}
+                    saveLabel="Save item"
+                  />
+                )}
+                {error && <p className="text-red-600 text-sm" role="alert">{error}</p>}
+              </div>
+            </BottomSheet>
+            <BottomSheet open={sheet === 'category'} title="New category" onClose={close}>
+              <form className="space-y-3" onSubmit={async (e) => { e.preventDefault(); if (await addCategory()) close(); }}>
+                {categories.length === 0 && <p className="text-sm text-slate-600">Start with a category, e.g. Venue, then add items to it.</p>}
+                <label className="flex flex-col gap-1 text-sm text-slate-600">
+                  Name
+                  <input list={`category-suggestions-phone-${project.id}`} placeholder="Catering" value={newCategory.name}
+                    onChange={(e) => setNewCategory({ ...newCategory, name: e.target.value })} className={`${inputClass} min-h-[44px] text-slate-900`} />
+                  <datalist id={`category-suggestions-phone-${project.id}`}>
+                    {SUGGESTED_CATEGORIES.filter(n => !categories.some(c => c.name === n)).map(n => <option key={n} value={n} />)}
+                  </datalist>
+                </label>
+                <label className="flex flex-col gap-1 text-sm text-slate-600">
+                  Budget in {symbol}
+                  <input inputMode="decimal" placeholder="0.00" value={newCategory.budget}
+                    onChange={(e) => MONEY_TYPING.test(e.target.value) && setNewCategory({ ...newCategory, budget: e.target.value })}
+                    className={`${inputClass} min-h-[44px] text-slate-900`} />
+                </label>
+                {error && <p className="text-red-600 text-sm" role="alert">{error}</p>}
+                <div className="flex gap-2">
+                  <button type="submit" className={`flex-1 min-h-[44px] ${primaryButton}`}>Add category</button>
+                  <button type="button" onClick={close} className={`min-h-[44px] ${secondaryButton}`}>Cancel</button>
+                </div>
+              </form>
+            </BottomSheet>
+          </>
+        );
+      })()}
     </div>
   );
 }

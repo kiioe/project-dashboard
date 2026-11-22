@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
+import { AddButton, BottomSheet } from './PhoneLayout';
 import { Plus, Trash2, Pencil } from 'lucide-react';
 
 const inputClass = 'px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
@@ -18,7 +19,11 @@ const todayStr = () => {
 
 // One project's task list. A project's progress comes only from these tasks.
 // Everyone in the organisation can view; only admins can add, tick, change or delete.
-export default function TasksPanel({ project, tasks, isAdmin, supabase, orgId, onChanged }) {
+// phone: adding happens in a panel opened by the round + button instead of the form at the bottom.
+export default function TasksPanel({ project, tasks, isAdmin, supabase, orgId, onChanged, phone = false }) {
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [added, setAdded] = useState(''); // last task added from the panel
+  const titleInput = useRef(null);
   const [error, setError] = useState('');
   const [newTask, setNewTask] = useState({ title: '', dueDate: '' });
   const [editing, setEditing] = useState(null); // { id, title, dueDate }
@@ -51,7 +56,11 @@ export default function TasksPanel({ project, tasks, isAdmin, supabase, orgId, o
     const ok = await run(supabase.from('project_tasks').insert({
       org_id: orgId, project_id: project.id, title, due_date: newTask.dueDate || null
     }));
-    if (ok) setNewTask({ title: '', dueDate: '' });
+    if (ok) {
+      setNewTask({ title: '', dueDate: newTask.dueDate });
+      setAdded(title);
+      titleInput.current?.focus();
+    }
   };
 
   const saveTask = async () => {
@@ -82,7 +91,7 @@ export default function TasksPanel({ project, tasks, isAdmin, supabase, orgId, o
         </div>
         <p className="text-slate-500 text-xs mt-2">
           Progress comes from this list: each task counts equally.
-          {tasks.length === 0 && (isAdmin ? ' Add the first task below.' : ' No tasks yet.')}
+          {tasks.length === 0 && (isAdmin ? (phone ? ' Tap + to add the first task.' : ' Add the first task below.') : ' No tasks yet.')}
         </p>
       </div>
 
@@ -110,8 +119,15 @@ export default function TasksPanel({ project, tasks, isAdmin, supabase, orgId, o
                 aria-label={`${task.done ? 'Mark not done' : 'Mark done'}: ${task.title}`}
                 className="h-4 w-4 accent-blue-600"
               />
-              <span className={`flex-1 text-sm ${task.done ? 'line-through text-slate-400' : 'text-slate-800'}`}>{task.title}</span>
-              {task.due_date && (
+              <span className={`flex-1 min-w-0 text-sm ${task.done ? 'line-through text-slate-400' : 'text-slate-800'}`}>
+                {task.title}
+                {phone && task.due_date && (
+                  <span className={`block text-xs no-underline ${!task.done && task.due_date < today ? 'text-red-700 font-medium' : 'text-slate-500'}`}>
+                    {!task.done && task.due_date < today ? 'Overdue · ' : 'Due '}{task.due_date}
+                  </span>
+                )}
+              </span>
+              {!phone && task.due_date && (
                 <span className={`text-xs whitespace-nowrap ${!task.done && task.due_date < today ? 'text-red-700 font-medium' : 'text-slate-500'}`}>
                   {!task.done && task.due_date < today ? 'Overdue · ' : 'Due '}{task.due_date}
                 </span>
@@ -137,7 +153,34 @@ export default function TasksPanel({ project, tasks, isAdmin, supabase, orgId, o
         </ul>
       )}
 
-      {isAdmin && (
+      {isAdmin && phone && (
+        <>
+          <AddButton label="Add task" onClick={() => { setError(''); setAdded(''); setNewTask({ title: '', dueDate: '' }); setSheetOpen(true); }} />
+          <BottomSheet open={sheetOpen} title={`New task · ${project.name}`} onClose={() => setSheetOpen(false)}>
+            <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); addTask(); }}>
+              <label className="flex flex-col gap-1 text-sm text-slate-600">
+                Task
+                <input ref={titleInput} autoFocus placeholder="Book venue" value={newTask.title} enterKeyHint="done"
+                  onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
+                  className={`${inputClass} min-h-[44px] text-slate-900`} />
+              </label>
+              <label className="flex flex-col gap-1 text-sm text-slate-600">
+                Due date (optional)
+                <input type="date" value={newTask.dueDate}
+                  onChange={(e) => setNewTask({ ...newTask, dueDate: e.target.value })} className={`${inputClass} min-h-[44px]`} />
+              </label>
+              {error && <p className="text-red-600 text-sm" role="alert">{error}</p>}
+              {added && !error && <p className="text-green-700 text-sm" role="status">Added “{added}”. Type the next one, or close.</p>}
+              <div className="flex gap-2">
+                <button type="submit" disabled={busy} className={`flex-1 min-h-[44px] ${primaryButton}`}>Add task</button>
+                <button type="button" onClick={() => setSheetOpen(false)} className={`min-h-[44px] ${secondaryButton}`}>Done</button>
+              </div>
+            </form>
+          </BottomSheet>
+        </>
+      )}
+
+      {isAdmin && !phone && (
         <div className="flex flex-wrap items-center gap-2">
           <input aria-label="New task name" placeholder="New task, e.g. Book venue" value={newTask.title}
             onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}

@@ -17,7 +17,10 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
       /* Stop iPhone zooming into form fields: 16px text on phones. */
-      @media (max-width: 767px) { input, select, textarea { font-size: 16px !important; } }
+      @media (max-width: 767px) {
+        input, select, textarea { font-size: 16px !important; }
+        html, body { overscroll-behavior-y: contain; } /* our own drag-down refresh, not the browser's */
+      }
     </style>
   </head>
   <body>

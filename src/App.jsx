@@ -8,7 +8,8 @@ import CostsPanel, { itemTotals } from './CostsPanel';
 import TasksPanel, { taskProgress } from './TasksPanel';
 import InvoiceDialog from './InvoiceDialog';
 import { downloadIssuedInvoice } from './invoicePdf';
-import { useIsPhone, PhoneShell, ProjectPicker, phoneCard, shortDate } from './PhoneLayout';
+import { useIsPhone, PhoneShell, ProjectTitle, AddButton, BottomSheet, phoneCard, shortDate } from './PhoneLayout';
+import PhoneOverview from './PhoneOverview';
 
 function useSupabaseClient() {
   const { session } = useSession();
@@ -214,6 +215,9 @@ const ProjectDashboard = () => {
   const [phoneProjectId, setPhoneProjectId] = useState(null); // project shown on the Tasks and Costs tabs
   const [phoneOpenId, setPhoneOpenId] = useState(null); // project card showing its actions
   const [projectSearch, setProjectSearch] = useState('');
+  const [projectsView, setProjectsView] = useState('list'); // Projects tab: 'list' or 'overview'
+  const [invoicesOpen, setInvoicesOpen] = useState(false);
+  const [timeSheetOpen, setTimeSheetOpen] = useState(false);
 
   const calculateMetrics = () => {
     const total = projects.length;
@@ -352,6 +356,7 @@ const ProjectDashboard = () => {
       return;
     }
     setTimeError('');
+    setTimeSheetOpen(false);
     setNewEntry({ projectId: newEntry.projectId, date: todayStr(), hours: '', note: '' });
     fetchTimeEntries();
     fetchUnbilledTime();
@@ -751,6 +756,11 @@ const ProjectDashboard = () => {
   };
 
   // ---- Phone layout (below 768px wide): compact header, one section at a time, bottom tabs ----
+  // Drag-down refresh on the phone: reload everything.
+  const refreshAll = () => Promise.all([
+    fetchProjects(), fetchCosts(), fetchTasks(), fetchInvoices(), ...(isAdmin ? [fetchTimeEntries()] : [])
+  ]);
+
   const renderPhone = () => {
     const pickedId = projects.some(p => p.id === phoneProjectId) ? phoneProjectId : projects[0]?.id ?? null;
     const picked = projects.find(p => p.id === pickedId);
@@ -779,13 +789,32 @@ const ProjectDashboard = () => {
       <>
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold">Projects</h1>
-          {isAdmin && (
-            <button onClick={openNewProjectForm} className={`${smallBtn} flex items-center gap-1 bg-blue-600 text-white px-4`}>
-              <Plus size={18} aria-hidden="true" /> New
-            </button>
-          )}
+          <div className="flex items-center gap-2">
+            {invoices.length > 0 && (
+              <button onClick={() => setInvoicesOpen(true)} className={`${smallBtn} border border-slate-300 bg-white text-slate-800`}>
+                Invoices ({invoices.length})
+              </button>
+            )}
+            {isAdmin && (
+              <button onClick={openNewProjectForm} className={`${smallBtn} flex items-center gap-1 bg-blue-600 text-white px-4`}>
+                <Plus size={18} aria-hidden="true" /> New
+              </button>
+            )}
+          </div>
         </div>
         {projectFormEl}
+        <div className="grid grid-cols-2 bg-slate-200/70 rounded-xl p-1" role="group" aria-label="View">
+          {[['list', 'List'], ['overview', 'Overview']].map(([id, label]) => (
+            <button key={id} onClick={() => setProjectsView(id)} aria-pressed={projectsView === id}
+              className={`min-h-[40px] rounded-lg text-sm ${projectsView === id ? 'bg-white font-semibold text-slate-900 shadow-sm' : 'text-slate-600'}`}>
+              {label}
+            </button>
+          ))}
+        </div>
+        {projectsView === 'overview' ? (
+          <PhoneOverview projects={projects} itemsFor={itemsFor} spentFor={spentFor} />
+        ) : (
+        <>
         <div className="grid grid-cols-3 gap-2">
           {counts.map(([label, n]) => (
             <div key={label} className="bg-white border border-slate-200 rounded-xl px-3 py-2">
@@ -865,9 +894,10 @@ const ProjectDashboard = () => {
             </div>
           );
         })}
-        {invoices.length > 0 && (
-          <section className={phoneCard}>
-            <h2 className="font-semibold mb-1">Invoices</h2>
+        </>
+        )}
+        <BottomSheet open={invoicesOpen} title="Invoices" onClose={() => setInvoicesOpen(false)}>
+          <div>
             <p className="text-xs text-slate-500 mb-2">Newest first. Kept even if their project is deleted.</p>
             <ul className="divide-y divide-slate-100">
               {invoices.map(inv => {
@@ -886,19 +916,18 @@ const ProjectDashboard = () => {
                 );
               })}
             </ul>
-          </section>
-        )}
+          </div>
+        </BottomSheet>
       </>
     );
 
     const tasksTab = (
       <>
-        <h1 className="text-2xl font-bold">Tasks</h1>
-        {!picked ? noProjects : (
+        {!picked ? (<><h1 className="text-2xl font-bold">Tasks</h1>{noProjects}</>) : (
           <>
-            <ProjectPicker projects={projects} value={pickedId} onChange={setPhoneProjectId} />
-            <TasksPanel project={picked} tasks={tasksFor(picked.id)} isAdmin={isAdmin}
-              supabase={supabase} orgId={organization.id} onChanged={refreshTasks} />
+            <ProjectTitle label="Tasks for" projects={projects} value={pickedId} onChange={setPhoneProjectId} />
+            <TasksPanel key={picked.id} project={picked} tasks={tasksFor(picked.id)} isAdmin={isAdmin}
+              supabase={supabase} orgId={organization.id} onChanged={refreshTasks} phone />
           </>
         )}
       </>
@@ -906,11 +935,12 @@ const ProjectDashboard = () => {
 
     const costsTab = (
       <>
-        <h1 className="text-2xl font-bold">Costs</h1>
-        {!picked ? noProjects : (
+        {!picked ? (<><h1 className="text-2xl font-bold">Costs</h1>{noProjects}</>) : (
           <>
-            <ProjectPicker projects={projects} value={pickedId} onChange={setPhoneProjectId} />
+            <ProjectTitle label="Costs for" projects={projects} value={pickedId} onChange={setPhoneProjectId} />
             <CostsPanel
+              key={picked.id}
+              phone
               project={picked}
               categories={categories.filter(c => c.project_id === picked.id)}
               items={itemsFor(picked.id)}
@@ -937,12 +967,16 @@ const ProjectDashboard = () => {
           <p className="text-slate-500 text-sm">Time tracking is for organisation admins at the moment.</p>
         ) : (
           <>
-            <section className={phoneCard}>
-              <h2 className="font-semibold mb-3">Log time</h2>
+            <AddButton label="Log time" onClick={() => {
+              setTimeError('');
+              if (!newEntry.projectId && pickedId != null) setNewEntry({ ...newEntry, projectId: String(pickedId) });
+              setTimeSheetOpen(true);
+            }} />
+            <BottomSheet open={timeSheetOpen} title="Log time" onClose={() => setTimeSheetOpen(false)}>
               {timeFormEl}
-            </section>
+            </BottomSheet>
             {timeEntries.length === 0 ? (
-              <p className="text-slate-500 text-sm">No time logged yet.</p>
+              <p className="text-slate-500 text-sm">No time logged yet. Tap + to log some.</p>
             ) : (
               <ul className={`${phoneCard} p-0 divide-y divide-slate-100`}>
                 {timeEntries.map(entry => (
@@ -971,7 +1005,7 @@ const ProjectDashboard = () => {
     );
 
     return (
-      <PhoneShell header={header} tab={phoneTab} onTab={setPhoneTab}>
+      <PhoneShell header={header} tab={phoneTab} onTab={setPhoneTab} onRefresh={refreshAll}>
         {{ projects: projectsTab, tasks: tasksTab, costs: costsTab, time: timeTab }[phoneTab]}
       </PhoneShell>
     );
