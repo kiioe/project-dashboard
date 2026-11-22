@@ -14,7 +14,8 @@ The to-do list is in `ROADMAP.md`. Keep it up to date.
 
 ## Code map
 
-- `src/App.jsx`: the main screen (project form, timeline, budget chart, time tracking, project table). Large; splitting it up is on the roadmap.
+- `src/App.jsx`: the main screen (project form, timeline, budget chart, time tracking, project table) and, below 768px wide, the phone layout (`renderPhone`). Large; splitting it up is on the roadmap.
+- `src/PhoneLayout.jsx`: phone shell (header, bottom tabs), `useIsPhone()`, project picker. `public/` holds the app icons and `manifest.webmanifest` (installable app).
 - `src/CostsPanel.jsx`: cost categories and items, billing logged time, the "Generate invoice" button and the project's issued invoices.
 - `src/TasksPanel.jsx`: project tasks. Progress comes from these.
 - `src/InvoiceDialog.jsx` and `src/invoicePdf.js`: the invoice preview and PDF builder (jsPDF, loaded only when needed). Issued invoices are rebuilt from their saved copy.
