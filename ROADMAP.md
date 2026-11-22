@@ -7,9 +7,10 @@ The same list lives in the claude.ai Project ("SEQNCE / SEQUENCE v1", `claude/se
 
 - [ ] **Upgrade Supabase to Pro shortly before launch** (no pausing, daily backups), then delete `.github/workflows/keep-alive.yml`. Until then the workflow keeps the free project awake.
 - [ ] **Choose the hosting plan before the first paying customer.** Vercel's free Hobby plan is non-commercial only; a paid product needs Vercel Pro ($20/month per seat) or moving the app's hosting to Cloudflare (commercial use allowed free; data and sign-in stay on Supabase and Clerk). Check which Vercel plan the project is on first. See "When to consider Cloudflare".
-- [ ] **Finish moving Clerk to production (in progress).** Production instance, DNS, lockout (10 tries → 1 minute), `@clerk/react` v6, the live `pk_live_` key in Vercel and Supabase trusting only `clerk.sqnce.co.uk` are done (18 Nov). E signed up on production and created the organisation; the old test data was deleted and the keep-alive job checked green (19 Nov). Left: the full live test, now folded into the Generate invoice live test above.
-- [ ] **One-click "Generate invoice": live since 21 Nov (PR #34, `supabase/generate-invoice.sql` run). Left: E's live test in E's own browser** (checklist in the Project doc `claude/sequence-todo.md`: client on project, INV-0001 preview and PDF, re-download, invoiced item can't be deleted, second invoice picks up only new items, "Nothing new to invoice", member can view only). Follow-up (21 Nov evening, `supabase/keep-invoices.sql`): pop-up naming the invoice when deleting an invoiced item or its category; invoices kept when a project is deleted (dashboard Invoices list); VAT ticked at 20% by default. Later: void/credit an invoice, deposits, paid/unpaid status.
-- [ ] **Phone app and layout (next after the Clerk move).** (a) Installable app (PWA): manifest, icon, full screen, named "SQNCE", so Safari → Share → Add to Home Screen opens it without browser bars. (b) Phone layout following the approved mock-ups (https://claude.ai/artifact/WvrtA5778vpgbBFE388npC): compact header (organisation switcher, account), bottom tabs Projects / Tasks / Costs / Time, projects as cards. No SQL.
+- [ ] **Phone app and layout (next).** E, 22 Nov: the app needs to fit a phone screen much better. (a) Installable app (PWA): manifest, icon, full screen, named "SQNCE", so Safari → Share → Add to Home Screen opens it without browser bars. (b) Phone layout following the approved mock-ups (https://claude.ai/artifact/WvrtA5778vpgbBFE388npC): compact header (organisation switcher, account), bottom tabs Projects / Tasks / Costs / Time, projects as cards. No SQL.
+- [ ] **UK date format (E, 22 Nov).** Dates shown the UK way (22/11/2026 or 22 Nov 2026) everywhere, including invoices and PDFs; US format as an option. Rules to agree (per organisation or per user; date pickers).
+- [ ] **Refunds and credit notes (E, 22 Nov).** Issued invoices are never edited: reduce or cancel them with a credit note (CN-0001…) and its PDF. Refunds need a paid/unpaid status on invoices first. Rules to agree (credit on account, re-billing credited items, partial refunds). Money: full live test.
+- [ ] **Billing details partly filled in (E, 22 Nov).** Invoice business details and client filled in from what's already in the app (organisation name, signed-in user's email, clients used before). Rules to agree.
 - [ ] **Brand name is SQNCE** (decided 21 Nov 2026): a SEQUENCE word mark exists in classes 9/42 (Sequence HQ Ltd, billing software). Rename "SEQUENCE" in the app's visible text to SQNCE (can ride with the phone item). Search the UK IPO for SQNCE before filing.
 - [ ] **Redirect the old address** `project-dashboard-wczx.vercel.app` to `sqnce.co.uk` once nothing relies on it.
 - [ ] **Watch for Cloudflare's registrant-check email** for both domains (Nominet shows name and address "awaiting validation"); unvalidated .uk domains can be suspended.
@@ -19,7 +20,7 @@ The same list lives in the claude.ai Project ("SEQNCE / SEQUENCE v1", `claude/se
 ## 2. Making it easier to keep building
 
 - [ ] **Split up `src/App.jsx`** (about 1,000 lines) into screens/components.
-- [ ] **Automated tests** for billing, VAT, rounding and progress-from-tasks.
+- [ ] **Automated tests** for billing, VAT, rounding, invoicing and progress-from-tasks.
 - [ ] **Delete redundant code:** unused code; the second Vercel project (`project-dashboard`) if not needed; `supabase/bill-logged-time.sql` (superseded by `billing-v2.sql`); `claim_invoice_number()` (replaced by `issue_invoice()`); old merged branches.
 - [ ] **Library upgrades:** Recharts 2 → 3 (2.x no longer maintained); Vite 4 → current.
 - [ ] **Time Tracking paging/filters** (the list shows only the latest 50 entries).
@@ -28,9 +29,10 @@ The same list lives in the claude.ai Project ("SEQNCE / SEQUENCE v1", `claude/se
 ## 3. Useful for planners
 
 - [ ] **Let team members do more** (tick tasks, log/edit their own time); members can only view today.
-- [ ] **Templates:** a new event starts with standard tasks and cost categories.
+- [ ] **Easier task entry (E, 22 Nov).** Quick-add box (Enter adds, stays open), paste a list to add many, edit in place, due date and owner on the same line.
+- [ ] **Templates: pre-loaded tasks and costs (E, 22 Nov).** A new event starts with standard tasks and cost categories with typical items and costs in, to adjust. Rules to agree (per organisation, several templates, Quoted at £0 or typical prices).
 - [ ] **Event date + deadlines overview:** overdue tasks and unpaid costs across all projects.
-- [ ] **Client side of money:** markup or client price per item (invoices are at cost today), "billable to client" flag.
+- [ ] **Client side of money:** markup or client price per item (invoices are at cost today), "billable to client" flag. Later invoice ideas: deposits, paid/unpaid status (needed for refunds).
 - [ ] Smaller: attach a receipt/invoice file to a cost item.
 
 ## When to consider Cloudflare
