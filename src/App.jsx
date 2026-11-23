@@ -474,10 +474,12 @@ const ProjectDashboard = () => {
   // One-click invoice for a project, at any status (admins only). Says so when there's nothing new.
   // Shared by the desktop and phone layouts.
   const projectFormEl = showAddForm && isAdmin && (
-    <div className="bg-white p-6 rounded-xl shadow-md border border-slate-200 mb-8">
-      <h2 className="text-xl font-bold text-slate-800 mb-4">
-        {editingId === null ? 'Add New Project' : `Edit Project: ${projects.find(p => p.id === editingId)?.name ?? ''}`}
-      </h2>
+    <div className={isPhone ? '' : 'bg-white p-6 rounded-xl shadow-md border border-slate-200 mb-8'}>
+      {!isPhone && (
+        <h2 className="text-xl font-bold text-slate-800 mb-4">
+          {editingId === null ? 'Add New Project' : `Edit Project: ${projects.find(p => p.id === editingId)?.name ?? ''}`}
+        </h2>
+      )}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <input
           type="text"
@@ -773,7 +775,7 @@ const ProjectDashboard = () => {
       ['Done', metrics.completed],
     ];
     const smallBtn = 'min-h-[44px] px-3 rounded-lg text-sm font-medium';
-    const noProjects = <p className="text-slate-500 text-sm">No projects yet.{isAdmin ? ' Add one on the Projects tab.' : ''}</p>;
+    const noProjects = <p className="text-slate-500 text-sm">No projects yet.{isAdmin ? (phoneTab === 'projects' ? ' Tap + to add one.' : ' Tap + on the Projects tab to add one.') : ''}</p>;
 
     const header = (
       <>
@@ -795,14 +797,14 @@ const ProjectDashboard = () => {
                 Invoices ({invoices.length})
               </button>
             )}
-            {isAdmin && (
-              <button onClick={openNewProjectForm} className={`${smallBtn} flex items-center gap-1 bg-blue-600 text-white px-4`}>
-                <Plus size={18} aria-hidden="true" /> New
-              </button>
-            )}
           </div>
         </div>
-        {projectFormEl}
+        {isAdmin && <AddButton label="New project" onClick={openNewProjectForm} />}
+        <BottomSheet open={showAddForm && isAdmin}
+          title={editingId === null ? 'New project' : `Edit ${projects.find(p => p.id === editingId)?.name ?? 'project'}`}
+          onClose={closeProjectForm}>
+          {projectFormEl}
+        </BottomSheet>
         <div className="grid grid-cols-2 bg-slate-200/70 rounded-xl p-1" role="group" aria-label="View">
           {[['list', 'List'], ['overview', 'Overview']].map(([id, label]) => (
             <button key={id} onClick={() => setProjectsView(id)} aria-pressed={projectsView === id}
@@ -870,7 +872,7 @@ const ProjectDashboard = () => {
                     <button onClick={() => openIn('costs', project.id)} className={`${smallBtn} bg-slate-100 text-slate-800`}>Costs</button>
                     {isAdmin && (
                       <>
-                        <button onClick={() => { startEditing(project); window.scrollTo(0, 0); }} className={`${smallBtn} bg-slate-100 text-slate-800`}>Edit</button>
+                        <button onClick={() => startEditing(project)} className={`${smallBtn} bg-slate-100 text-slate-800`}>Edit</button>
                         <button onClick={() => { setConfirmDeleteId(project.id); setDeleteError(''); }} className={`${smallBtn} text-red-700`}>Delete</button>
                       </>
                     )}
