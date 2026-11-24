@@ -10,6 +10,7 @@ import InvoiceDialog from './InvoiceDialog';
 import { downloadIssuedInvoice } from './invoicePdf';
 import { useIsPhone, PhoneShell, ProjectTitle, AddButton, BottomSheet, phoneCard, shortDate } from './PhoneLayout';
 import PhoneOverview from './PhoneOverview';
+import { FeedbackProvider, FeedbackLink, SectionFeedback } from './Feedback';
 
 function useSupabaseClient() {
   const { session } = useSession();
@@ -781,7 +782,8 @@ const ProjectDashboard = () => {
       <>
         <span className="font-bold text-lg tracking-wide text-slate-900">SQNCE</span>
         <div className="flex items-center gap-2 min-w-0">
-          <div className="min-w-0 max-w-[60vw] overflow-hidden"><OrganizationSwitcher /></div>
+          <div className="min-w-0 max-w-[50vw] overflow-hidden"><OrganizationSwitcher /></div>
+          <FeedbackLink phone />
           <UserButton />
         </div>
       </>
@@ -814,7 +816,10 @@ const ProjectDashboard = () => {
           ))}
         </div>
         {projectsView === 'overview' ? (
-          <PhoneOverview projects={projects} itemsFor={itemsFor} spentFor={spentFor} />
+          <>
+            <PhoneOverview projects={projects} itemsFor={itemsFor} spentFor={spentFor} />
+            <SectionFeedback section="overview" />
+          </>
         ) : (
         <>
         <div className="grid grid-cols-3 gap-2">
@@ -896,6 +901,7 @@ const ProjectDashboard = () => {
             </div>
           );
         })}
+        {!loading && projects.length > 0 && <SectionFeedback section="projects" />}
         </>
         )}
         <BottomSheet open={invoicesOpen} title="Invoices" onClose={() => setInvoicesOpen(false)}>
@@ -918,6 +924,7 @@ const ProjectDashboard = () => {
                 );
               })}
             </ul>
+            <SectionFeedback section="invoices" className="mt-3" />
           </div>
         </BottomSheet>
       </>
@@ -930,6 +937,7 @@ const ProjectDashboard = () => {
             <ProjectTitle label="Tasks for" projects={projects} value={pickedId} onChange={setPhoneProjectId} />
             <TasksPanel key={picked.id} project={picked} tasks={tasksFor(picked.id)} isAdmin={isAdmin}
               supabase={supabase} orgId={organization.id} onChanged={refreshTasks} phone />
+            <SectionFeedback section="tasks" />
           </>
         )}
       </>
@@ -957,6 +965,7 @@ const ProjectDashboard = () => {
               itemInvoice={itemInvoice}
               onDownloadInvoice={downloadInvoice}
             />
+            <SectionFeedback section="costs" />
           </>
         )}
       </>
@@ -1001,6 +1010,7 @@ const ProjectDashboard = () => {
                 ))}
               </ul>
             )}
+            <SectionFeedback section="time" />
           </>
         )}
       </>
@@ -1037,7 +1047,9 @@ const ProjectDashboard = () => {
             <CreateOrganization />
           </div>
         </div>
-      ) : isPhone ? (
+      ) : (
+      <FeedbackProvider supabase={supabase} orgId={organization.id} user={user} isPhone={isPhone}>
+      {isPhone ? (
         <>
           {renderPhone()}
           {invoiceDialogEl}
@@ -1051,6 +1063,7 @@ const ProjectDashboard = () => {
             <p className="text-slate-600">Your events: tasks, costs, time and invoices in one place</p>
           </div>
           <div className="flex items-center gap-4">
+            <FeedbackLink />
             <OrganizationSwitcher />
             {isAdmin && (
               <button
@@ -1145,6 +1158,7 @@ const ProjectDashboard = () => {
               })}
             </div>
           </div>
+          {!loading && projects.length > 0 && <SectionFeedback section="timeline" className="mt-4" />}
         </div>
 
         {/* Budget Chart */}
@@ -1183,6 +1197,7 @@ const ProjectDashboard = () => {
               </BarChart>
             </ResponsiveContainer>
           )}
+          {projects.length > 0 && <SectionFeedback section="budget" className="mt-4" />}
         </div>
 
         {/* Time Tracking (admins only) */}
@@ -1235,6 +1250,7 @@ const ProjectDashboard = () => {
                 </table>
               )}
             </div>
+            <SectionFeedback section="time" className="mt-4" />
           </div>
         )}
 
@@ -1364,6 +1380,7 @@ const ProjectDashboard = () => {
                           orgId={organization.id}
                           onChanged={refreshTasks}
                         />
+                        <SectionFeedback section="tasks" className="mt-4" />
                       </td>
                     </tr>
                   )}
@@ -1385,6 +1402,7 @@ const ProjectDashboard = () => {
                           itemInvoice={itemInvoice}
                           onDownloadInvoice={downloadInvoice}
                         />
+                        <SectionFeedback section="costs" className="mt-4" />
                       </td>
                     </tr>
                   )}
@@ -1393,6 +1411,7 @@ const ProjectDashboard = () => {
               </tbody>
             </table>
           </div>
+          {projects.length > 0 && <SectionFeedback section="projects" className="mt-4" />}
         </div>
 
         {/* All issued invoices, kept for audit even after their project is deleted */}
@@ -1435,11 +1454,14 @@ const ProjectDashboard = () => {
                 </tbody>
               </table>
             </div>
+            <SectionFeedback section="invoices" className="mt-4" />
           </div>
         )}
       </div>
       {invoiceDialogEl}
     </div>
+      )}
+      </FeedbackProvider>
       )}
       </Show>
     </>
