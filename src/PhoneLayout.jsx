@@ -191,11 +191,3 @@ export function ProjectTitle({ label, projects, value, onChange }) {
 }
 
 export const phoneCard = 'bg-white border border-slate-200 rounded-2xl p-4';
-
-// "Sat 14 Jun 2027" from "2027-06-14".
-export function shortDate(iso) {
-  if (!iso) return '';
-  const d = new Date(`${iso}T00:00:00`);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
-}

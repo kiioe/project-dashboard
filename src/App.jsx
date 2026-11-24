@@ -8,7 +8,8 @@ import CostsPanel, { itemTotals } from './CostsPanel';
 import TasksPanel, { taskProgress } from './TasksPanel';
 import InvoiceDialog from './InvoiceDialog';
 import { downloadIssuedInvoice } from './invoicePdf';
-import { useIsPhone, PhoneShell, ProjectTitle, AddButton, BottomSheet, phoneCard, shortDate } from './PhoneLayout';
+import { useIsPhone, PhoneShell, ProjectTitle, AddButton, BottomSheet, phoneCard } from './PhoneLayout';
+import { DateFormatContext, DEFAULT_DATE_FORMAT, DATE_FORMATS, formatDate, DateInput } from './dates';
 import PhoneOverview from './PhoneOverview';
 import { FeedbackProvider, FeedbackLink, SectionFeedback } from './Feedback';
 
@@ -67,6 +68,9 @@ const ProjectDashboard = () => {
   const [invoiceFor, setInvoiceFor] = useState(null); // project id with the invoice dialog open
   const [invoices, setInvoices] = useState([]); // issued invoices
   const [invoiceItems, setInvoiceItems] = useState([]); // the lines on them
+  const [dateFormat, setDateFormat] = useState(DEFAULT_DATE_FORMAT); // organisation's date format
+  const fd = (iso, style) => formatDate(iso, style, dateFormat);
+  const shortDate = (iso) => fd(iso, 'weekday');
 
   useEffect(() => {
     if (organization) {
@@ -74,10 +78,17 @@ const ProjectDashboard = () => {
       fetchCosts();
       fetchTasks();
       fetchInvoices();
+      fetchDateFormat();
       if (isAdmin) fetchTimeEntries();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [organization, isAdmin]);
+
+  // The organisation's date format (UK unless an admin chose US). No row yet means UK.
+  const fetchDateFormat = async () => {
+    const { data } = await supabase.from('org_settings').select('date_format').eq('org_id', organization.id).maybeSingle();
+    setDateFormat(DATE_FORMATS[data?.date_format] ? data.date_format : DEFAULT_DATE_FORMAT);
+  };
 
   const fetchProjects = async () => {
     setLoading(true);
@@ -136,7 +147,7 @@ const ProjectDashboard = () => {
   // How many things a new invoice would pick up: cost items not yet invoiced, plus unbilled logged time.
   const newToInvoiceFor = (projectId) => uninvoicedItemsFor(projectId).length + unbilledTimeFor(projectId).length;
   const downloadInvoice = (invoice) =>
-    downloadIssuedInvoice(invoice, invoiceItems, projects.find(p => p.id === invoice.project_id)?.name || invoice.project_name || '');
+    downloadIssuedInvoice(invoice, invoiceItems, projects.find(p => p.id === invoice.project_id)?.name || invoice.project_name || '', dateFormat);
   // After an invoice is issued: it may have billed logged time and saved the client details.
   const refreshAfterInvoice = async () => {
     await Promise.all([fetchInvoices(), fetchCosts(), fetchProjects()]);
@@ -466,6 +477,7 @@ const ProjectDashboard = () => {
           supabase={supabase}
           orgId={organization.id}
           onIssued={refreshAfterInvoice}
+          onDateFormatChange={setDateFormat}
           onClose={() => setInvoiceFor(null)}
         />
       )}
@@ -498,15 +510,13 @@ const ProjectDashboard = () => {
           <option>In Progress</option>
           <option>Completed</option>
         </select>
-        <input
-          type="date"
+        <DateInput
           placeholder="Start Date"
           value={newProject.startDate}
           onChange={(e) => setNewProject({...newProject, startDate: e.target.value})}
           className={inputClass}
         />
-        <input
-          type="date"
+        <DateInput
           placeholder="End Date"
           value={newProject.endDate}
           onChange={(e) => setNewProject({...newProject, endDate: e.target.value})}
@@ -620,8 +630,7 @@ const ProjectDashboard = () => {
               <option key={p.id} value={p.id}>{p.name}</option>
             ))}
           </select>
-          <input
-            type="date"
+          <DateInput
             value={newEntry.date}
             onChange={(e) => setNewEntry({...newEntry, date: e.target.value})}
             className={inputClass}
@@ -659,8 +668,7 @@ const ProjectDashboard = () => {
   const entryEditFields = (entry) => (
     <>
     <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
-      <input
-        type="date"
+      <DateInput
         aria-label="Entry date"
         value={editingEntry.date}
         onChange={(e) => setEditingEntry({ ...editingEntry, date: e.target.value })}
@@ -722,7 +730,7 @@ const ProjectDashboard = () => {
       <div className="flex items-center gap-3">
         <button
           onClick={() => startEditingEntry(entry)}
-          aria-label={`Edit time entry ${entry.entry_date}, ${Number(entry.hours)} h`}
+          aria-label={`Edit time entry ${fd(entry.entry_date)}, ${Number(entry.hours)} h`}
           title="Edit time entry"
           className="text-blue-600 hover:text-blue-800 transition-colors"
         >
@@ -1024,7 +1032,7 @@ const ProjectDashboard = () => {
   };
 
   return (
-    <>
+    <DateFormatContext.Provider value={dateFormat}>
       <Show when="signed-out">
         <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center p-8">
           <div className="bg-white p-10 rounded-xl shadow-md border border-slate-200 text-center max-w-sm">
@@ -1146,7 +1154,7 @@ const ProjectDashboard = () => {
                       </div>
                     </div>
                     <div className="flex items-center ml-48 text-xs text-slate-500">
-                      {project.startDate} → {project.endDate}
+                      {fd(project.startDate)} → {fd(project.endDate)}
                       <span className="ml-4 text-slate-600">
                         {getDaysRemaining(project.endDate) > 0
                           ? `${getDaysRemaining(project.endDate)} days remaining`
@@ -1234,7 +1242,7 @@ const ProjectDashboard = () => {
                       </tr>
                     ) : (
                       <tr key={entry.id} className="border-b border-slate-100 hover:bg-slate-50">
-                        <td className="py-3 px-4 text-sm text-slate-600">{entry.entry_date}</td>
+                        <td className="py-3 px-4 text-sm text-slate-600 whitespace-nowrap">{fd(entry.entry_date, 'numeric')}</td>
                         <td className="py-3 px-4 text-sm text-slate-800 font-medium">{projectName(entry.project_id)}</td>
                         <td className="py-3 px-4 text-sm text-slate-600">{Number(entry.hours)}h</td>
                         <td className="py-3 px-4 text-sm text-slate-600">{entry.note}</td>
@@ -1437,7 +1445,7 @@ const ProjectDashboard = () => {
                     return (
                       <tr key={inv.id} className="border-b border-slate-100">
                         <td className="py-2 px-4 font-medium text-slate-800">{inv.number}</td>
-                        <td className="py-2 px-4 text-slate-600">{inv.issue_date}</td>
+                        <td className="py-2 px-4 text-slate-600 whitespace-nowrap">{fd(inv.issue_date)}</td>
                         <td className="py-2 px-4 text-slate-600">
                           {live ? live.name : inv.project_name}
                           {!live && <span className="ml-2 text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">Project deleted</span>}
@@ -1464,7 +1472,7 @@ const ProjectDashboard = () => {
       </FeedbackProvider>
       )}
       </Show>
-    </>
+    </DateFormatContext.Provider>
   );
 };
 

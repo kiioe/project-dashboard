@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { CURRENCIES, formatMoney, sumMoney } from './money';
 import { itemTotals } from './CostsPanel';
-import { phoneCard, shortDate } from './PhoneLayout';
+import { phoneCard } from './PhoneLayout';
+import { useDates } from './dates';
 
 // Phone "Overview" (design b1, 22 Nov 2026): what's coming up, and where each budget stands.
 // Stands in for the desktop timeline and budget chart.
@@ -18,6 +19,8 @@ function countdown(endIso) {
 }
 
 export default function PhoneOverview({ projects, itemsFor, spentFor }) {
+  const { date } = useDates();
+  const shortDate = (iso) => date(iso, 'weekday');
   const currencies = Object.keys(CURRENCIES).filter(c => projects.some(p => p.currency === c));
   const [currency, setCurrency] = useState(currencies[0]);
   const cur = currencies.includes(currency) ? currency : currencies[0];

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Plus, Trash2, Pencil, Clock, FileDown, X } from 'lucide-react';
 import { MONEY_TYPING, parseMoney, CURRENCIES, formatMoney, sumMoney } from './money';
 import { AddButton, BottomSheet } from './PhoneLayout';
+import { useDates, DateInput } from './dates';
 
 export const ITEM_STATUSES = ['Quoted', 'Booked', 'Invoiced', 'Paid'];
 // An item counts as committed once it's booked; "Quoted" is only an estimate.
@@ -71,8 +72,8 @@ function ItemFields({ draft, onChange, symbol, onSave, onCancel, saveLabel }) {
       </select>
       <label className="flex items-center gap-2 text-sm text-slate-600">
         Due
-        <input type="date" aria-label="Due date" value={draft.dueDate}
-          onChange={(e) => onChange({ dueDate: e.target.value })} className={`${inputClass} flex-1`} />
+        <DateInput aria-label="Due date" value={draft.dueDate} wrapperClassName="flex flex-col flex-1 min-w-0"
+          onChange={(e) => onChange({ dueDate: e.target.value })} className={`${inputClass} w-full`} />
       </label>
       <div className="flex flex-wrap items-center gap-2 sm:col-span-2">
         <button onClick={onSave} className={primaryButton}>{saveLabel}</button>
@@ -86,6 +87,7 @@ function ItemFields({ draft, onChange, symbol, onSave, onCancel, saveLabel }) {
 // Shows one project's cost categories and the items inside them.
 // Everyone in the organisation can view; only admins can add, change or delete.
 export default function CostsPanel({ project, categories, items, isAdmin, supabase, orgId, onChanged, unbilledTime = [], onBillTime, invoiceButton = null, invoices = [], itemInvoice = new Map(), onDownloadInvoice, phone = false }) {
+  const { date, dates } = useDates();
   // phone: adding happens in a panel opened by the round + button ('choose' | 'item' | 'category').
   const [sheet, setSheet] = useState(null);
   const [sheetCategoryId, setSheetCategoryId] = useState(null);
@@ -256,9 +258,9 @@ export default function CostsPanel({ project, categories, items, isAdmin, supaba
               <ul className="border border-slate-200 rounded-lg divide-y divide-slate-100">
                 {blocked.rows.map(({ item, invoice }) => (
                   <li key={item.id} className="flex flex-wrap items-center gap-x-3 px-3 py-2">
-                    <span className="text-slate-800">{item.description}</span>
+                    <span className="text-slate-800">{dates(item.description)}</span>
                     <span className="ml-auto text-slate-600">
-                      <strong>{invoice.number}</strong> · {invoice.issue_date}{invoice.client_name ? ` · ${invoice.client_name}` : ''}
+                      <strong>{invoice.number}</strong> · {date(invoice.issue_date)}{invoice.client_name ? ` · ${invoice.client_name}` : ''}
                     </span>
                   </li>
                 ))}
@@ -289,7 +291,7 @@ export default function CostsPanel({ project, categories, items, isAdmin, supaba
             {invoices.map(inv => (
               <li key={inv.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 py-2">
                 <span className="font-medium text-slate-800">{inv.number}</span>
-                <span className="text-slate-500">{inv.issue_date}</span>
+                <span className="text-slate-500">{date(inv.issue_date)}</span>
                 <span className="text-slate-500">{inv.client_name}</span>
                 <span className="ml-auto font-medium text-slate-800">{formatMoney(Number(inv.total), inv.currency)}</span>
                 <button onClick={() => onDownloadInvoice(inv).catch(() => setError('Could not make the PDF. Please try again.'))}
@@ -374,8 +376,8 @@ export default function CostsPanel({ project, categories, items, isAdmin, supaba
                     <li key={t.id}>
                       <label className="flex flex-wrap items-center gap-2 text-sm text-slate-700">
                         <input type="checkbox" checked={!excludedEntries.includes(t.id)} onChange={() => toggleEntry(t.id)}
-                          aria-label={`Include ${t.entry_date}, ${t.hours} h`} />
-                        <span className="whitespace-nowrap">{t.entry_date}</span>
+                          aria-label={`Include ${date(t.entry_date)}, ${t.hours} h`} />
+                        <span className="whitespace-nowrap">{date(t.entry_date)}</span>
                         <span className="font-medium">{t.hours} h</span>
                         <span className="text-slate-500">× {money(rateFor(t))}</span>
                         {t.note && <span className="text-slate-500 truncate max-w-xs">· {t.note}</span>}
@@ -482,7 +484,7 @@ export default function CostsPanel({ project, categories, items, isAdmin, supaba
                       </tr>
                     ) : (
                       <tr key={item.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 sm:p-0 sm:table-row border-t border-slate-100">
-                        <td className="basis-full sm:basis-auto sm:table-cell sm:py-2 sm:px-4 text-slate-800 font-medium sm:font-normal">{item.description}</td>
+                        <td className="basis-full sm:basis-auto sm:table-cell sm:py-2 sm:px-4 text-slate-800 font-medium sm:font-normal">{dates(item.description)}</td>
                         <td className={`${item.supplier ? '' : 'hidden'} sm:table-cell sm:py-2 sm:px-4 text-slate-600`}>{item.supplier || '—'}</td>
                         <td className="sm:table-cell sm:py-2 sm:px-4 text-slate-600 whitespace-nowrap">{item.quantity} × {money(item.unit_cost)}</td>
                         <td className="sm:table-cell sm:py-2 sm:px-4 text-slate-800 font-medium whitespace-nowrap"><span className="sm:hidden">= </span>{money(item.total)}</td>
@@ -500,7 +502,7 @@ export default function CostsPanel({ project, categories, items, isAdmin, supaba
                             <span className={`px-2 py-1 rounded-full text-xs font-medium ${STATUS_STYLES[item.status]}`}>{item.status}</span>
                           )}
                         </td>
-                        <td className={`${item.due_date ? '' : 'hidden'} sm:table-cell sm:py-2 sm:px-4 text-slate-600 whitespace-nowrap`}><span className="sm:hidden">Due </span>{item.due_date || '—'}</td>
+                        <td className={`${item.due_date ? '' : 'hidden'} sm:table-cell sm:py-2 sm:px-4 text-slate-600 whitespace-nowrap`}><span className="sm:hidden">Due </span>{item.due_date ? date(item.due_date) : '—'}</td>
                         {isAdmin && (
                           <td className="ml-auto sm:ml-0 sm:table-cell sm:py-2 sm:px-4">
                             <span className="flex items-center justify-end gap-3">
