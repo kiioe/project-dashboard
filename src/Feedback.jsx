@@ -3,7 +3,7 @@ import { ThumbsUp, ThumbsDown, MessageSquare, X } from 'lucide-react';
 import { BottomSheet } from './PhoneLayout';
 
 // Feedback (24 Nov 2026). Rules agreed with E:
-// - Each main section ends with a "Was this section helpful?" strip (thumbs up / down) (wait cut from 3 days to 1 on 24 Nov, at E's request).
+// - Each main section ends with an "Is this section of the app useful?" strip (was "Was this section helpful?"; blue since 24 Nov) (thumbs up / down) (wait cut from 3 days to 1 on 24 Nov, at E's request).
 //   It appears only once someone has used the app for 1+ day AND opened that section 3+ times,
 //   so new users aren't asked about things they haven't used.
 // - Once they've voted, the strip shrinks to a small thumb in the corner; tapping it opens it again
@@ -127,11 +127,11 @@ export function FeedbackLink({ phone = false }) {
   );
 }
 
-const stripClass = 'rounded-2xl bg-[#1b1433] text-white';
-const upClass = 'text-emerald-400';
-const downClass = 'text-pink-500';
+const stripClass = 'rounded-2xl bg-blue-600 text-white'; // matches the round + button (E, 24 Nov)
+const upClass = 'text-emerald-300';
+const downClass = 'text-pink-300';
 
-// "Was this section helpful?" at the bottom of a section.
+// "Is this section of the app useful?" at the bottom of a section.
 export function SectionFeedback({ section, className = '' }) {
   const fb = useContext(FeedbackContext);
   const [expanded, setExpanded] = useState(false);
@@ -206,7 +206,7 @@ export function SectionFeedback({ section, className = '' }) {
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <div className="text-xs text-white/70">Feedback</div>
-          <div className="text-sm font-medium">Was this section helpful?</div>
+          <div className="text-sm font-medium">Is this section of the app useful?</div>
         </div>
         <div className="flex items-center gap-1 shrink-0">
           {thumb(1)}
@@ -226,14 +226,14 @@ export function SectionFeedback({ section, className = '' }) {
           </label>
           <textarea id={`fb-why-${section}`} ref={commentBox} value={comment} rows={3}
             maxLength={VOTE_COMMENT_MAX} onChange={(e) => setComment(e.target.value)}
-            className="w-full rounded-lg bg-white text-slate-900 px-3 py-2 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400" />
+            className="w-full rounded-lg bg-white text-slate-900 px-3 py-2 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-white" />
           <div className="flex items-center justify-between gap-2">
             <span className="text-xs text-white/50">{comment.length}/{VOTE_COMMENT_MAX}</span>
             <div className="flex gap-2">
               <button onClick={() => sendWhy(true)} disabled={busy}
                 className="min-h-[40px] px-4 rounded-lg text-sm text-white/80 hover:text-white">Skip</button>
               <button onClick={() => sendWhy(false)} disabled={busy || !comment.trim()}
-                className="min-h-[40px] px-4 rounded-lg text-sm font-semibold bg-emerald-400 text-slate-900 disabled:opacity-50">Send</button>
+                className="min-h-[40px] px-4 rounded-lg text-sm font-semibold bg-white text-blue-700 hover:bg-blue-50 disabled:opacity-50">Send</button>
             </div>
           </div>
         </div>
