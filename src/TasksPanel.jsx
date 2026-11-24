@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { AddButton, BottomSheet } from './PhoneLayout';
 import { Plus, Trash2, Pencil } from 'lucide-react';
+import { useDates, DateInput } from './dates';
 
 const inputClass = 'px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
 const primaryButton = 'bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700 disabled:opacity-60';
@@ -21,6 +22,7 @@ const todayStr = () => {
 // Everyone in the organisation can view; only admins can add, tick, change or delete.
 // phone: adding happens in a panel opened by the round + button instead of the form at the bottom.
 export default function TasksPanel({ project, tasks, isAdmin, supabase, orgId, onChanged, phone = false }) {
+  const { date } = useDates();
   const [sheetOpen, setSheetOpen] = useState(false);
   const [added, setAdded] = useState(''); // last task added from the panel
   const titleInput = useRef(null);
@@ -103,7 +105,7 @@ export default function TasksPanel({ project, tasks, isAdmin, supabase, orgId, o
                 onChange={(e) => setEditing({ ...editing, title: e.target.value })} className={`${inputClass} flex-1 min-w-[12rem]`} />
               <label className="flex items-center gap-2 text-sm text-slate-600">
                 Due
-                <input type="date" aria-label="Task due date" value={editing.dueDate}
+                <DateInput wrapperClassName="flex items-center gap-2" echoClassName="!mt-0" aria-label="Task due date" value={editing.dueDate}
                   onChange={(e) => setEditing({ ...editing, dueDate: e.target.value })} className={inputClass} />
               </label>
               <button onClick={saveTask} disabled={busy} className={primaryButton}>Save</button>
@@ -123,13 +125,13 @@ export default function TasksPanel({ project, tasks, isAdmin, supabase, orgId, o
                 {task.title}
                 {phone && task.due_date && (
                   <span className={`block text-xs no-underline ${!task.done && task.due_date < today ? 'text-red-700 font-medium' : 'text-slate-500'}`}>
-                    {!task.done && task.due_date < today ? 'Overdue · ' : 'Due '}{task.due_date}
+                    {!task.done && task.due_date < today ? 'Overdue · ' : 'Due '}{date(task.due_date)}
                   </span>
                 )}
               </span>
               {!phone && task.due_date && (
                 <span className={`text-xs whitespace-nowrap ${!task.done && task.due_date < today ? 'text-red-700 font-medium' : 'text-slate-500'}`}>
-                  {!task.done && task.due_date < today ? 'Overdue · ' : 'Due '}{task.due_date}
+                  {!task.done && task.due_date < today ? 'Overdue · ' : 'Due '}{date(task.due_date)}
                 </span>
               )}
               {isAdmin && (confirmDelete === task.id ? (
@@ -166,7 +168,7 @@ export default function TasksPanel({ project, tasks, isAdmin, supabase, orgId, o
               </label>
               <label className="flex flex-col gap-1 text-sm text-slate-600">
                 Due date (optional)
-                <input type="date" value={newTask.dueDate}
+                <DateInput value={newTask.dueDate}
                   onChange={(e) => setNewTask({ ...newTask, dueDate: e.target.value })} className={`${inputClass} min-h-[44px]`} />
               </label>
               {error && <p className="text-red-600 text-sm" role="alert">{error}</p>}
@@ -188,7 +190,7 @@ export default function TasksPanel({ project, tasks, isAdmin, supabase, orgId, o
             className={`${inputClass} flex-1 min-w-[12rem]`} />
           <label className="flex items-center gap-2 text-sm text-slate-600">
             Due
-            <input type="date" aria-label="New task due date" value={newTask.dueDate}
+            <DateInput wrapperClassName="flex items-center gap-2" echoClassName="!mt-0" aria-label="New task due date" value={newTask.dueDate}
               onChange={(e) => setNewTask({ ...newTask, dueDate: e.target.value })} className={inputClass} />
           </label>
           <button onClick={addTask} disabled={busy} className={`flex items-center gap-1 ${primaryButton}`}>

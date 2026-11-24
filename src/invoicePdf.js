@@ -1,4 +1,5 @@
 import { formatMoneyFixed, sumMoney } from './money';
+import { formatDate, formatDatesIn, DEFAULT_DATE_FORMAT } from './dates';
 
 // Invoice totals from the chosen lines: subtotal, VAT (if added) and total, all to the penny.
 export const invoiceTotals = (lines, vatOn, vatRate) => {
@@ -7,13 +8,13 @@ export const invoiceTotals = (lines, vatOn, vatRate) => {
   return { subtotal, vat, total: sumMoney([subtotal, vat]) };
 };
 
-const longDate = (iso) =>
-  iso ? new Date(`${iso}T00:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '';
 
 const safeFileName = (text) => text.replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-').slice(0, 60) || 'project';
 
 // Builds the invoice PDF and returns the jsPDF document. The PDF library is loaded only when needed.
-export async function buildInvoicePdf({ seller, client, invoice, project, lines, vatOn, vatRate, totals: savedTotals }) {
+export async function buildInvoicePdf({ seller, client, invoice, project, lines, vatOn, vatRate, totals: savedTotals, dateFormat = DEFAULT_DATE_FORMAT }) {
+  const longDate = (iso) => formatDate(iso, 'long', dateFormat);
+  const describe = (text) => formatDatesIn(text, dateFormat);
   const [{ jsPDF }, { default: autoTable }] = await Promise.all([import('jspdf'), import('jspdf-autotable')]);
   const money = (n) => formatMoneyFixed(n, project.currency);
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
@@ -67,7 +68,7 @@ export async function buildInvoicePdf({ seller, client, invoice, project, lines,
     startY: y,
     margin: { left: margin, right: margin },
     head: [['Description', 'Qty', 'Unit price', 'Amount']],
-    body: lines.map(l => [l.category ? `${l.description}\n${l.category}` : l.description, String(l.quantity), money(l.unit_cost), money(l.total)]),
+    body: lines.map(l => [l.category ? `${describe(l.description)}\n${l.category}` : describe(l.description), String(l.quantity), money(l.unit_cost), money(l.total)]),
     styles: { font: 'helvetica', fontSize: 9.5, textColor: dark, cellPadding: 3, lineColor: [226, 232, 240], lineWidth: { bottom: 0.2 } },
     headStyles: { fillColor: [241, 245, 249], textColor: dark, fontStyle: 'bold' },
     columnStyles: { 1: { halign: 'right', cellWidth: 18 }, 2: { halign: 'right', cellWidth: 32 }, 3: { halign: 'right', cellWidth: 34 } },
@@ -125,7 +126,7 @@ export const invoiceFileName = (invoice, project) => `Invoice-${invoice.number}-
 export const preloadPdfLibrary = () => Promise.all([import('jspdf'), import('jspdf-autotable')]);
 
 // Downloads an issued invoice exactly as it was recorded (seller, client, lines and totals are copies).
-export async function downloadIssuedInvoice(invoice, invoiceItems, projectName) {
+export async function downloadIssuedInvoice(invoice, invoiceItems, projectName, dateFormat = DEFAULT_DATE_FORMAT) {
   const lines = invoiceItems
     .filter(l => l.invoice_id === invoice.id)
     .sort((a, b) => a.position - b.position)
@@ -141,7 +142,8 @@ export async function downloadIssuedInvoice(invoice, invoiceItems, projectName) 
     lines,
     vatOn,
     vatRate: vatOn ? Number(invoice.vat_rate) : 0,
-    totals: { subtotal: Number(invoice.subtotal), vat: Number(invoice.vat), total: Number(invoice.total) }
+    totals: { subtotal: Number(invoice.subtotal), vat: Number(invoice.vat), total: Number(invoice.total) },
+    dateFormat
   });
   doc.save(invoiceFileName(details, project));
 }

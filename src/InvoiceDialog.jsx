@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { X, FileDown } from 'lucide-react';
 import { formatMoney, sumMoney } from './money';
 import { invoiceTotals, preloadPdfLibrary, downloadIssuedInvoice } from './invoicePdf';
+import { useDates, DateInput, DATE_FORMATS } from './dates';
 
 const inputClass = 'px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-full';
 const labelClass = 'block text-xs font-medium text-slate-600 mb-1';
@@ -33,7 +34,9 @@ export const timeLines = (entries, projectRate) => {
 // The one-click invoice: a pre-filled preview of everything not yet invoiced on the project.
 // Downloading records the invoice (and bills any ticked logged time), so the next one picks up only new items.
 // Your business details are asked for only the first time, then saved for the organisation.
-export default function InvoiceDialog({ project, categories, items, unbilledTime, supabase, orgId, onIssued, onClose }) {
+export default function InvoiceDialog({ project, categories, items, unbilledTime, supabase, orgId, onIssued, onClose, onDateFormatChange }) {
+  const { fmt, date, dates } = useDates();
+  const [formatError, setFormatError] = useState('');
   const money = (n) => formatMoney(n, project.currency);
   const projectRate = Number(project.hourly_rate) || 0;
   const [loading, setLoading] = useState(true);
@@ -66,6 +69,16 @@ export default function InvoiceDialog({ project, categories, items, unbilledTime
       setLoading(false);
     })();
   }, [supabase, orgId]);
+
+  // Admins choose the organisation's date format (UK or US). It applies at once, for everyone.
+  const changeDateFormat = async (code) => {
+    if (!DATE_FORMATS[code] || code === fmt) return;
+    setFormatError('');
+    const { error: saveError } = await supabase.from('org_settings')
+      .upsert({ org_id: orgId, date_format: code, updated_at: new Date().toISOString() }, { onConflict: 'org_id' });
+    if (saveError) return setFormatError('Could not save the date format. Please try again.');
+    onDateFormatChange?.(code);
+  };
 
   // Close with Escape.
   useEffect(() => {
@@ -144,7 +157,7 @@ export default function InvoiceDialog({ project, categories, items, unbilledTime
         setDone('The invoice was recorded, but the PDF couldn’t be made. Download it from the project’s Invoices list.');
       } else {
         try {
-          await downloadIssuedInvoice(inv.data, lines.data, project.name);
+          await downloadIssuedInvoice(inv.data, lines.data, project.name, fmt);
           setDone(`Downloaded invoice ${inv.data.number} (${money(Number(inv.data.total))}).`);
         } catch {
           setDone(`Invoice ${inv.data.number} was recorded, but the PDF couldn’t be made. Download it from the project’s Invoices list.`);
@@ -227,6 +240,16 @@ export default function InvoiceDialog({ project, categories, items, unbilledTime
                   {seller.payment_details && <div className="text-slate-500 text-xs mt-1">Payment details saved</div>}
                 </div>
               )}
+              {/* The organisation's date format: used everywhere in the app and on invoices. Saved straight away. */}
+              <div className="flex flex-wrap items-center gap-2 mt-3 text-sm text-slate-600">
+                <label htmlFor="date-format">Date format</label>
+                <select id="date-format" value={fmt} onChange={(e) => changeDateFormat(e.target.value)}
+                  className="px-2 py-1 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  {Object.entries(DATE_FORMATS).map(([code, f]) => <option key={code} value={code}>{f.label} ({f.example})</option>)}
+                </select>
+                <span className="text-xs text-slate-500">For everyone in your organisation, in the app and on invoices.</span>
+                {formatError && <span className="text-xs text-red-600" role="alert">{formatError}</span>}
+              </div>
             </section>
 
             {/* Client (from the project) and invoice details */}
@@ -247,12 +270,12 @@ export default function InvoiceDialog({ project, categories, items, unbilledTime
                 </div>
                 <div>
                   <label className={labelClass} htmlFor="issue-date">Issue date</label>
-                  <input id="issue-date" type="date" className={inputClass} value={invoice.issueDate}
+                  <DateInput id="issue-date" className={inputClass} value={invoice.issueDate}
                     onChange={(e) => setInvoice({ ...invoice, issueDate: e.target.value })} />
                 </div>
                 <div>
                   <label className={labelClass} htmlFor="due-date">Due date</label>
-                  <input id="due-date" type="date" className={inputClass} value={invoice.dueDate}
+                  <DateInput id="due-date" className={inputClass} value={invoice.dueDate}
                     onChange={(e) => setInvoice({ ...invoice, dueDate: e.target.value })} />
                 </div>
               </div>
@@ -272,12 +295,12 @@ export default function InvoiceDialog({ project, categories, items, unbilledTime
               ) : (
                 <ul className="border border-slate-200 rounded-lg divide-y divide-slate-100 max-h-80 overflow-y-auto">
                   {items.map(item => itemRow(`item-${item.id}`, !excluded.includes(item.id), () => toggle(excluded, setExcluded, item.id),
-                    item.description, `${categoryName(item.category_id)} · ${item.status}`,
+                    dates(item.description), `${categoryName(item.category_id)} · ${item.status}`,
                     `${item.quantity} × ${money(item.unit_cost)}`, money(item.total)))}
                   {unbilledTime.map(t => {
                     const r = t.hourly_rate || projectRate;
                     return itemRow(`time-${t.id}`, !excludedTime.includes(t.id), () => toggle(excludedTime, setExcludedTime, t.id),
-                      `Logged time ${t.entry_date}`, t.note ? `${t.note} · billed when you download` : 'billed when you download',
+                      `Logged time ${date(t.entry_date)}`, t.note ? `${t.note} · billed when you download` : 'billed when you download',
                       r ? `${hoursText(t.hours)} h × ${money(r)}` : `${hoursText(t.hours)} h · no rate`, r ? money(Math.round(t.hours * r * 100) / 100) : '—');
                   })}
                 </ul>
