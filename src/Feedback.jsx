@@ -3,8 +3,8 @@ import { ThumbsUp, ThumbsDown, MessageSquare, X } from 'lucide-react';
 import { BottomSheet } from './PhoneLayout';
 
 // Feedback (24 Nov 2026). Rules agreed with E:
-// - Each main section ends with a "Was this section helpful?" strip (thumbs up / down).
-//   It appears only once someone has used the app for 3+ days AND opened that section 3+ times,
+// - Each main section ends with a "Was this section helpful?" strip (thumbs up / down) (wait cut from 3 days to 1 on 24 Nov, at E's request).
+//   It appears only once someone has used the app for 1+ day AND opened that section 3+ times,
 //   so new users aren't asked about things they haven't used.
 // - Once they've voted, the strip shrinks to a small thumb in the corner; tapping it opens it again
 //   to change the vote, or tap the same thumb again to take the vote back.
@@ -14,7 +14,7 @@ import { BottomSheet } from './PhoneLayout';
 // - Saved in the feedback table (supabase/feedback.sql). Only E can read it; people see only their own votes.
 // Usage (first day seen, how often each section was opened) is kept on this device only.
 
-export const SHOW_AFTER_DAYS = 3;
+export const SHOW_AFTER_DAYS = 1;
 export const SHOW_AFTER_OPENS = 3;
 const VOTE_COMMENT_MAX = 500;
 const MESSAGE_MAX = 2000;
