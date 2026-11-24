@@ -11,6 +11,7 @@ The same list lives in the claude.ai Project ("SEQNCE / SEQUENCE v1", `claude/se
 - [x] **Phone polish** (22 Nov 2026, E's feedback): drag down to refresh on every tab; Invoices in a slide-up panel from a button on Projects; round + button (bottom right) on Projects (new project; 23 Nov), Tasks, Costs (item or category) and Time; tap the project title to switch project (design a1); List | Overview switch on Projects with "Coming up" countdowns and per-project budget bars (design b1). Code: `src/PhoneOverview.jsx`, `AddButton`/`BottomSheet`/`ProjectTitle` in `src/PhoneLayout.jsx`.
 - [x] **Feedback** (24 Nov 2026): "Was this section helpful?" thumbs strip at the bottom of each main section, shown once someone has used the app 1+ day (3 until 24 Nov) and opened that section 3+ times (counted on their device); shrinks to a small thumb after voting; thumbs down offers an optional comment. Always-visible "Feedback" link in the header (Bug / Idea / Other). Only E reads it (Supabase; saved queries at the bottom of `supabase/feedback.sql`). Code: `src/Feedback.jsx`.
 - [ ] Idea: **Feedback inbox** screen just for E, instead of reading feedback in Supabase.
+- [ ] Idea: **Organisation Settings screen** (admins) for the date format and invoice business details, which today are only reachable from the invoice preview.
 - [x] **UK date format** (24 Nov 2026): one setting per organisation (UK by default, US as the option; admins change it under "Your details" in the invoice preview). Every date in the app, invoices and PDFs follows it (28 Nov 2026, 28/11/2026 in tight columns, 28 November 2026 on PDFs). Date pickers stay the browser's own, with the date echoed underneath in the organisation's format. Code: `src/dates.jsx`; SQL: `supabase/date-format.sql`.
 - [ ] **Refunds and credit notes (E, 22 Nov).** Issued invoices are never edited: reduce or cancel them with a credit note (CN-0001…) and its PDF. Refunds need a paid/unpaid status on invoices first. Rules to agree (credit on account, re-billing credited items, partial refunds). Money: full live test.
 - [ ] **Billing details partly filled in (E, 22 Nov).** Invoice business details and client filled in from what's already in the app (organisation name, signed-in user's email, clients used before). Rules to agree.
@@ -23,7 +24,7 @@ The same list lives in the claude.ai Project ("SEQNCE / SEQUENCE v1", `claude/se
 ## 2. Making it easier to keep building
 
 - [ ] **Split up `src/App.jsx`** (about 1,000 lines) into screens/components.
-- [ ] **Automated tests** for billing, VAT, rounding, invoicing and progress-from-tasks.
+- [ ] **Automated tests** for billing, VAT, rounding, invoicing, progress-from-tasks and date formats.
 - [ ] **Delete redundant code:** unused code; the second Vercel project (`project-dashboard`) if not needed; `supabase/bill-logged-time.sql` (superseded by `billing-v2.sql`); `claim_invoice_number()` (replaced by `issue_invoice()`); old merged branches.
 - [ ] **Library upgrades:** Recharts 2 → 3 (2.x no longer maintained); Vite 4 → current.
 - [ ] **Time Tracking paging/filters** (the list shows only the latest 50 entries).
