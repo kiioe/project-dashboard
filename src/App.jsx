@@ -12,6 +12,7 @@ import { useIsPhone, PhoneShell, ProjectTitle, AddButton, BottomSheet, phoneCard
 import { DateFormatContext, DEFAULT_DATE_FORMAT, DATE_FORMATS, formatDate, DateInput } from './dates';
 import PhoneOverview from './PhoneOverview';
 import { FeedbackProvider, FeedbackLink, SectionFeedback } from './Feedback';
+import SettingsDialog, { SettingsLink } from './SettingsDialog';
 
 function useSupabaseClient() {
   const { session } = useSession();
@@ -70,6 +71,7 @@ const ProjectDashboard = () => {
   const [invoiceItems, setInvoiceItems] = useState([]); // the lines on them
   const [dateFormat, setDateFormat] = useState(DEFAULT_DATE_FORMAT); // organisation's date format
   const fd = (iso, style) => formatDate(iso, style, dateFormat);
+  const [showSettings, setShowSettings] = useState(false); // organisation Settings (admins only)
   const shortDate = (iso) => fd(iso, 'weekday');
 
   useEffect(() => {
@@ -477,8 +479,16 @@ const ProjectDashboard = () => {
           supabase={supabase}
           orgId={organization.id}
           onIssued={refreshAfterInvoice}
-          onDateFormatChange={setDateFormat}
           onClose={() => setInvoiceFor(null)}
+        />
+      )}
+      {showSettings && isAdmin && (
+        <SettingsDialog
+          supabase={supabase}
+          orgId={organization.id}
+          phone={isPhone}
+          onDateFormatChange={setDateFormat}
+          onClose={() => setShowSettings(false)}
         />
       )}
     </>
@@ -792,6 +802,7 @@ const ProjectDashboard = () => {
         <div className="flex items-center gap-2 min-w-0">
           <div className="min-w-0 max-w-[50vw] overflow-hidden"><OrganizationSwitcher /></div>
           <FeedbackLink phone />
+          {isAdmin && <SettingsLink phone onClick={() => setShowSettings(true)} />}
           <UserButton />
         </div>
       </>
@@ -1072,6 +1083,7 @@ const ProjectDashboard = () => {
           </div>
           <div className="flex items-center gap-4">
             <FeedbackLink />
+            {isAdmin && <SettingsLink onClick={() => setShowSettings(true)} />}
             <OrganizationSwitcher />
             {isAdmin && (
               <button
