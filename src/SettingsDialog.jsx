@@ -162,23 +162,23 @@ export default function SettingsDialog({ supabase, orgId, phone = false, onDateF
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className={labelClass} htmlFor="settings-name">Business name</label>
-            <input id="settings-name" className={inputClass} maxLength={LIMITS.business_name} value={form.business_name}
+            <input id="settings-name" placeholder="Your business name (shown at the top of invoices)" className={inputClass} maxLength={LIMITS.business_name} value={form.business_name}
               onChange={(e) => set('business_name', e.target.value)} />
           </div>
           <div>
             <label className={labelClass} htmlFor="settings-email">Email (optional)</label>
-            <input id="settings-email" type="email" className={inputClass} maxLength={LIMITS.email} value={form.email}
+            <input id="settings-email" placeholder="Your business email, e.g. hello@yourbusiness.co.uk" type="email" className={inputClass} maxLength={LIMITS.email} value={form.email}
               onChange={(e) => set('email', e.target.value)} />
           </div>
           <div>
             <label className={labelClass} htmlFor="settings-address">Address (optional)</label>
-            <textarea id="settings-address" rows={3} className={inputClass} maxLength={LIMITS.address} value={form.address}
+            <textarea id="settings-address" placeholder="Your business address" rows={3} className={inputClass} maxLength={LIMITS.address} value={form.address}
               onChange={(e) => set('address', e.target.value)} />
           </div>
           <div>
             <label className={labelClass} htmlFor="settings-payment">Payment details (optional)</label>
             <textarea id="settings-payment" rows={3} className={inputClass} maxLength={LIMITS.payment_details}
-              placeholder="How the client should pay you" value={form.payment_details}
+              placeholder="How your clients should pay you, e.g. bank name, account name, sort code and account number" value={form.payment_details}
               onChange={(e) => set('payment_details', e.target.value)} />
           </div>
           <div>
