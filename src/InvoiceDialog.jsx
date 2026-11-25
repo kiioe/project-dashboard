@@ -201,22 +201,22 @@ export default function InvoiceDialog({ project, categories, items, unbilledTime
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className={labelClass} htmlFor="seller-name">Business name</label>
-                    <input id="seller-name" className={inputClass} value={seller.business_name}
+                    <input id="seller-name" placeholder="Your business name (shown at the top of invoices)" className={inputClass} value={seller.business_name}
                       onChange={(e) => setSeller({ ...seller, business_name: e.target.value })} />
                   </div>
                   <div>
                     <label className={labelClass} htmlFor="seller-email">Email (optional)</label>
-                    <input id="seller-email" className={inputClass} value={seller.email}
+                    <input id="seller-email" placeholder="Your business email, e.g. hello@yourbusiness.co.uk" className={inputClass} value={seller.email}
                       onChange={(e) => setSeller({ ...seller, email: e.target.value })} />
                   </div>
                   <div>
                     <label className={labelClass} htmlFor="seller-address">Address (optional)</label>
-                    <textarea id="seller-address" rows={3} className={inputClass} value={seller.address}
+                    <textarea id="seller-address" placeholder="Your business address" rows={3} className={inputClass} value={seller.address}
                       onChange={(e) => setSeller({ ...seller, address: e.target.value })} />
                   </div>
                   <div>
                     <label className={labelClass} htmlFor="seller-payment">Payment details (optional)</label>
-                    <textarea id="seller-payment" rows={3} className={inputClass} placeholder="How the client should pay you"
+                    <textarea id="seller-payment" rows={3} className={inputClass} placeholder="How your clients should pay you, e.g. bank name, account name, sort code and account number"
                       value={seller.payment_details} onChange={(e) => setSeller({ ...seller, payment_details: e.target.value })} />
                   </div>
                   <p className="text-xs text-slate-500 sm:col-span-2">Saved for your organisation when you download, and reused on every invoice.</p>
