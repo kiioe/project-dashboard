@@ -86,7 +86,7 @@ function ItemFields({ draft, onChange, symbol, onSave, onCancel, saveLabel }) {
 
 // Shows one project's cost categories and the items inside them.
 // Everyone in the organisation can view; only admins can add, change or delete.
-export default function CostsPanel({ project, categories, items, isAdmin, supabase, orgId, onChanged, unbilledTime = [], onBillTime, invoiceButton = null, invoices = [], itemInvoice = new Map(), onDownloadInvoice, phone = false }) {
+export default function CostsPanel({ project, categories, items, isAdmin, supabase, orgId, onChanged, unbilledTime = [], onBillTime, invoiceButton = null, invoices = [], itemInvoice = new Map(), onDownloadInvoice, onOpenInvoice, invoiceStatus, phone = false }) {
   const { date, dates } = useDates();
   // phone: adding happens in a panel opened by the round + button ('choose' | 'item' | 'category').
   const [sheet, setSheet] = useState(null);
@@ -290,8 +290,11 @@ export default function CostsPanel({ project, categories, items, isAdmin, supaba
           <ul className="divide-y divide-slate-100 text-sm">
             {invoices.map(inv => (
               <li key={inv.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 py-2">
-                <span className="font-medium text-slate-800">{inv.number}</span>
+                {onOpenInvoice
+                  ? <button onClick={() => onOpenInvoice(inv)} className="font-medium text-blue-700 hover:text-blue-900" aria-label={`Open invoice ${inv.number}`}>{inv.number}</button>
+                  : <span className="font-medium text-slate-800">{inv.number}</span>}
                 <span className="text-slate-500">{date(inv.issue_date)}</span>
+                {invoiceStatus && invoiceStatus(inv)}
                 <span className="text-slate-500">{inv.client_name}</span>
                 <span className="ml-auto font-medium text-slate-800">{formatMoney(Number(inv.total), inv.currency)}</span>
                 <button onClick={() => onDownloadInvoice(inv).catch(() => setError('Could not make the PDF. Please try again.'))}

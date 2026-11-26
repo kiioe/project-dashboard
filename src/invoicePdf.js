@@ -12,7 +12,8 @@ export const invoiceTotals = (lines, vatOn, vatRate) => {
 const safeFileName = (text) => text.replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-').slice(0, 60) || 'project';
 
 // Builds the invoice PDF and returns the jsPDF document. The PDF library is loaded only when needed.
-export async function buildInvoicePdf({ seller, client, invoice, project, lines, vatOn, vatRate, totals: savedTotals, dateFormat = DEFAULT_DATE_FORMAT }) {
+// A credit note uses the same layout, with its own title, details, table, total label and blocks (`layout`).
+export async function buildInvoicePdf({ seller, client, invoice, project, lines, vatOn, vatRate, totals: savedTotals, dateFormat = DEFAULT_DATE_FORMAT, layout = null }) {
   const longDate = (iso) => formatDate(iso, 'long', dateFormat);
   const describe = (text) => formatDatesIn(text, dateFormat);
   const [{ jsPDF }, { default: autoTable }] = await Promise.all([import('jspdf'), import('jspdf-autotable')]);
@@ -29,7 +30,7 @@ export async function buildInvoicePdf({ seller, client, invoice, project, lines,
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(26);
   doc.setTextColor(...accent);
-  doc.text('INVOICE', margin, 28);
+  doc.text(layout?.title || 'INVOICE', margin, 28);
 
   doc.setTextColor(...dark);
   doc.setFontSize(12);
@@ -48,30 +49,35 @@ export async function buildInvoicePdf({ seller, client, invoice, project, lines,
   const label = (text, x, yy) => { doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(...muted); doc.text(text.toUpperCase(), x, yy); };
   const value = (text, x, yy, opts) => { doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(...dark); doc.text(text, x, yy, opts); };
 
-  label('Bill to', margin, y);
+  label(layout?.clientLabel || 'Bill to', margin, y);
   doc.setFont('helvetica', 'bold'); doc.setFontSize(10.5); doc.setTextColor(...dark);
   doc.text(client.name, margin, y + 5.5);
   const clientLines = client.details.split('\n').map(l => l.trim()).filter(Boolean);
   clientLines.forEach((line, i) => value(line, margin, y + 10.5 + i * 4.8));
 
   const detailsX = pageWidth / 2 + 20;
-  [['Invoice number', invoice.number], ['Issue date', longDate(invoice.issueDate)], ['Due date', longDate(invoice.dueDate)], ['Project', project.name]]
+  const detailRows = layout?.details?.(longDate) ||
+    [['Invoice number', invoice.number], ['Issue date', longDate(invoice.issueDate)], ['Due date', longDate(invoice.dueDate)], ['Project', project.name]];
+  detailRows
     .forEach(([l, v], i) => {
       label(l, detailsX, y + i * 9.5);
       value(doc.splitTextToSize(v, right - detailsX)[0], detailsX, y + 4.6 + i * 9.5);
     });
 
-  y = Math.max(y + 12 + clientLines.length * 4.8, y + 4 * 9.5) + 4;
+  y = Math.max(y + 12 + clientLines.length * 4.8, y + detailRows.length * 9.5) + 4;
 
   // Itemised lines.
   autoTable(doc, {
     startY: y,
     margin: { left: margin, right: margin },
-    head: [['Description', 'Qty', 'Unit price', 'Amount']],
-    body: lines.map(l => [l.category ? `${describe(l.description)}\n${l.category}` : describe(l.description), String(l.quantity), money(l.unit_cost), money(l.total)]),
+    head: layout ? [['Description', 'Amount credited']] : [['Description', 'Qty', 'Unit price', 'Amount']],
+    body: lines.map(l => {
+      const text = l.category ? `${describe(l.description)}\n${l.category}` : describe(l.description);
+      return layout ? [text, money(l.total)] : [text, String(l.quantity), money(l.unit_cost), money(l.total)];
+    }),
     styles: { font: 'helvetica', fontSize: 9.5, textColor: dark, cellPadding: 3, lineColor: [226, 232, 240], lineWidth: { bottom: 0.2 } },
     headStyles: { fillColor: [241, 245, 249], textColor: dark, fontStyle: 'bold' },
-    columnStyles: { 1: { halign: 'right', cellWidth: 18 }, 2: { halign: 'right', cellWidth: 32 }, 3: { halign: 'right', cellWidth: 34 } },
+    columnStyles: layout ? { 1: { halign: 'right', cellWidth: 40 } } : { 1: { halign: 'right', cellWidth: 18 }, 2: { halign: 'right', cellWidth: 32 }, 3: { halign: 'right', cellWidth: 34 } },
     didParseCell: (data) => { if (data.section === 'head' && data.column.index > 0) data.cell.styles.halign = 'right'; }
   });
 
@@ -93,7 +99,7 @@ export async function buildInvoicePdf({ seller, client, invoice, project, lines,
   doc.setDrawColor(...dark);
   doc.line(totalsLabelX, y - 3.5, right, y - 3.5);
   y += 2;
-  totalRow('Total due', money(total), true);
+  totalRow(layout?.totalLabel || 'Total due', money(total), true);
 
   // Payment details and notes.
   const block = (title, text) => {
@@ -106,8 +112,7 @@ export async function buildInvoicePdf({ seller, client, invoice, project, lines,
     doc.text(wrapped, margin, y + 5);
     y += 5 + wrapped.length * 4.6;
   };
-  block('Payment details', seller.payment_details);
-  block('Notes', invoice.notes);
+  (layout?.blocks || [['Payment details', seller.payment_details], ['Notes', invoice.notes]]).forEach(([t, text]) => block(t, text || ''));
 
   // Footer on every page.
   const pages = doc.getNumberOfPages();
@@ -146,4 +151,34 @@ export async function downloadIssuedInvoice(invoice, invoiceItems, projectName, 
     dateFormat
   });
   doc.save(invoiceFileName(details, project));
+}
+
+// Downloads an issued credit note, using its invoice's saved copy of the seller and client.
+export async function downloadCreditNote(creditNote, invoice, creditNoteItems, projectName, dateFormat = DEFAULT_DATE_FORMAT) {
+  const lines = creditNoteItems
+    .filter(l => l.credit_note_id === creditNote.id)
+    .sort((a, b) => a.position - b.position)
+    .map(l => ({ description: l.description, category: l.category, total: Number(l.amount) }));
+  const vatOn = creditNote.vat_rate !== null && creditNote.vat_rate !== undefined;
+  const project = { name: projectName, currency: creditNote.currency };
+  const doc = await buildInvoicePdf({
+    seller: { business_name: invoice.seller_name, address: invoice.seller_address || '', email: invoice.seller_email || '', payment_details: '' },
+    client: { name: invoice.client_name, details: invoice.client_address || '' },
+    invoice: { number: creditNote.number },
+    project,
+    lines,
+    vatOn,
+    vatRate: vatOn ? Number(creditNote.vat_rate) : 0,
+    totals: { subtotal: Number(creditNote.subtotal), vat: Number(creditNote.vat), total: Number(creditNote.total) },
+    dateFormat,
+    layout: {
+      title: 'CREDIT NOTE',
+      clientLabel: 'Client',
+      details: (longDate) => [['Credit note number', creditNote.number], ['Issue date', longDate(creditNote.issue_date)],
+        ['Against invoice', `${invoice.number} of ${longDate(invoice.issue_date)}`], ['Project', projectName]],
+      totalLabel: 'Total credited',
+      blocks: [['Reason', creditNote.reason]]
+    }
+  });
+  doc.save(`Credit-note-${creditNote.number}-${safeFileName(projectName)}.pdf`);
 }

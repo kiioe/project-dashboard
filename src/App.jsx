@@ -8,6 +8,7 @@ import CostsPanel, { itemTotals } from './CostsPanel';
 import TasksPanel, { taskProgress } from './TasksPanel';
 import InvoiceDialog from './InvoiceDialog';
 import { downloadIssuedInvoice } from './invoicePdf';
+import InvoiceMoneyDialog, { invoiceMoney, InvoiceStatus } from './InvoiceMoney';
 import { useIsPhone, PhoneShell, ProjectTitle, AddButton, BottomSheet, phoneCard } from './PhoneLayout';
 import { DateFormatContext, DEFAULT_DATE_FORMAT, DATE_FORMATS, formatDate, DateInput } from './dates';
 import PhoneOverview from './PhoneOverview';
@@ -69,6 +70,8 @@ const ProjectDashboard = () => {
   const [invoiceFor, setInvoiceFor] = useState(null); // project id with the invoice dialog open
   const [invoices, setInvoices] = useState([]); // issued invoices
   const [invoiceItems, setInvoiceItems] = useState([]); // the lines on them
+  const [invoiceMoneyRows, setInvoiceMoneyRows] = useState({ payments: [], creditNotes: [], creditNoteItems: [], refunds: [] });
+  const [moneyFor, setMoneyFor] = useState(null); // invoice id with its payments / credit notes panel open
   const [dateFormat, setDateFormat] = useState(DEFAULT_DATE_FORMAT); // organisation's date format
   const fd = (iso, style) => formatDate(iso, style, dateFormat);
   const [showSettings, setShowSettings] = useState(false); // organisation Settings (admins only)
@@ -138,7 +141,18 @@ const ProjectDashboard = () => {
     ]);
     if (!inv.error) setInvoices(inv.data);
     if (!lines.error) setInvoiceItems(lines.data);
+    // Payments, credit notes and refunds (supabase/credit-notes.sql). Missing tables just mean none yet.
+    const [pay, cn, cni, ref] = await Promise.all(['invoice_payments', 'credit_notes', 'credit_note_items', 'refunds']
+      .map(t => supabase.from(t).select('*').eq('org_id', organization.id).order('id')));
+    setInvoiceMoneyRows({
+      payments: pay.error ? [] : pay.data,
+      creditNotes: cn.error ? [] : cn.data,
+      creditNoteItems: cni.error ? [] : cni.data,
+      refunds: ref.error ? [] : ref.data
+    });
   };
+  const moneyOf = (inv) => invoiceMoney(inv, invoiceMoneyRows);
+  const invoiceProjectName = (inv) => projects.find(p => p.id === inv.project_id)?.name || inv.project_name || '';
   const invoicesFor = (projectId) => invoices.filter(i => i.project_id === projectId);
   const invoicedItemIds = new Set(invoiceItems.map(l => l.cost_item_id).filter(Boolean));
   // Which issued invoice each cost item is on (shown when someone tries to delete it).
@@ -482,6 +496,23 @@ const ProjectDashboard = () => {
           onClose={() => setInvoiceFor(null)}
         />
       )}
+      {moneyFor !== null && invoices.some(i => i.id === moneyFor) && (() => {
+        const inv = invoices.find(i => i.id === moneyFor);
+        return (
+          <InvoiceMoneyDialog
+            invoice={inv}
+            money={moneyOf(inv)}
+            lines={invoiceItems}
+            {...invoiceMoneyRows}
+            projectName={invoiceProjectName(inv)}
+            isAdmin={isAdmin}
+            supabase={supabase}
+            dateFormat={dateFormat}
+            onChanged={refreshAfterInvoice}
+            onClose={() => setMoneyFor(null)}
+          />
+        );
+      })()}
       {showSettings && isAdmin && (
         <SettingsDialog
           supabase={supabase}
@@ -925,17 +956,20 @@ const ProjectDashboard = () => {
         )}
         <BottomSheet open={invoicesOpen} title="Invoices" onClose={() => setInvoicesOpen(false)}>
           <div>
-            <p className="text-xs text-slate-500 mb-2">Newest first. Kept even if their project is deleted.</p>
+            <p className="text-xs text-slate-500 mb-2">Newest first. Kept even if their project is deleted. Tap one for payments and credit notes.</p>
             <ul className="divide-y divide-slate-100">
               {invoices.map(inv => {
                 const live = projects.find(p => p.id === inv.project_id);
                 return (
                   <li key={inv.id} className="flex items-center justify-between gap-3 py-2">
                     <span className="min-w-0">
-                      <span className="block font-medium text-sm">{inv.number} · {formatMoney(Number(inv.total), inv.currency)}</span>
-                      <span className="block text-xs text-slate-500 truncate">
-                        {shortDate(inv.issue_date)} · {live ? live.name : `${inv.project_name} (deleted)`}
-                      </span>
+                      <button onClick={() => setMoneyFor(inv.id)} className="block text-left w-full" aria-label={`Open invoice ${inv.number}`}>
+                        <span className="block font-medium text-sm">{inv.number} · {formatMoney(Number(inv.total), inv.currency)}</span>
+                        <span className="block text-xs text-slate-500 truncate">
+                          {shortDate(inv.issue_date)} · {live ? live.name : `${inv.project_name} (deleted)`}
+                        </span>
+                        <span className="block mt-1"><InvoiceStatus money={moneyOf(inv)} currency={inv.currency} /></span>
+                      </button>
                     </span>
                     <button onClick={() => downloadInvoice(inv)} aria-label={`Download invoice ${inv.number}`}
                       className={`${smallBtn} shrink-0 text-blue-700`}>PDF</button>
@@ -983,6 +1017,8 @@ const ProjectDashboard = () => {
               invoices={invoicesFor(picked.id)}
               itemInvoice={itemInvoice}
               onDownloadInvoice={downloadInvoice}
+              onOpenInvoice={(inv) => setMoneyFor(inv.id)}
+              invoiceStatus={(inv) => <InvoiceStatus money={moneyOf(inv)} currency={inv.currency} />}
             />
             <SectionFeedback section="costs" />
           </>
@@ -1421,6 +1457,8 @@ const ProjectDashboard = () => {
                           invoices={invoicesFor(project.id)}
                           itemInvoice={itemInvoice}
                           onDownloadInvoice={downloadInvoice}
+              onOpenInvoice={(inv) => setMoneyFor(inv.id)}
+              invoiceStatus={(inv) => <InvoiceStatus money={moneyOf(inv)} currency={inv.currency} />}
                         />
                         <SectionFeedback section="costs" className="mt-4" />
                       </td>
@@ -1438,7 +1476,7 @@ const ProjectDashboard = () => {
         {invoices.length > 0 && (
           <div className="bg-white p-6 rounded-xl shadow-md border border-slate-200 mt-8">
             <h2 className="text-xl font-bold text-slate-800 mb-1">Invoices</h2>
-            <p className="text-sm text-slate-500 mb-4">Every issued invoice, newest first. Invoices are kept even if their project is deleted.</p>
+            <p className="text-sm text-slate-500 mb-4">Every issued invoice, newest first. Invoices are kept even if their project is deleted. An issued invoice is never changed: record payments, or reduce or cancel it with a credit note.</p>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
@@ -1448,6 +1486,7 @@ const ProjectDashboard = () => {
                     <th className="py-2 px-4 font-semibold">Project</th>
                     <th className="py-2 px-4 font-semibold">Client</th>
                     <th className="py-2 px-4 font-semibold text-right">Total</th>
+                    <th className="py-2 px-4 font-semibold">Status</th>
                     <th className="py-2 px-4"></th>
                   </tr>
                 </thead>
@@ -1464,7 +1503,10 @@ const ProjectDashboard = () => {
                         </td>
                         <td className="py-2 px-4 text-slate-600">{inv.client_name}</td>
                         <td className="py-2 px-4 text-right font-medium text-slate-800">{formatMoney(Number(inv.total), inv.currency)}</td>
-                        <td className="py-2 px-4 text-right">
+                        <td className="py-2 px-4"><InvoiceStatus money={moneyOf(inv)} currency={inv.currency} /></td>
+                        <td className="py-2 px-4 text-right whitespace-nowrap">
+                          <button onClick={() => setMoneyFor(inv.id)} aria-label={`Payments and credit notes for ${inv.number}`}
+                            className="text-blue-700 hover:text-blue-900 mr-4">{isAdmin ? 'Payments & credits' : 'Details'}</button>
                           <button onClick={() => downloadInvoice(inv)} aria-label={`Download invoice ${inv.number}`} title="Download PDF"
                             className="text-blue-700 hover:text-blue-900">Download</button>
                         </td>

@@ -5,6 +5,7 @@ The same list lives in the claude.ai Project ("SEQNCE / SEQUENCE v1", `claude/se
 
 ## 1. Before real customers use it
 
+- [x] **Payments, credit notes and refunds** (26 Nov 2026): record payments on an invoice (status Unpaid / Part paid / Paid / Credited); issue credit notes CN-0001… for whole invoices or some lines (full or part amounts), with a PDF; refunds recorded against a credit note, up to what was overpaid. No credit on account; lines credited in full go back to "not yet invoiced"; Amount Spent unchanged; admins only. SQL: `supabase/credit-notes.sql`. Code: `src/InvoiceMoney.jsx`.
 - [x] **Organisation Settings screen** (25 Nov 2026): a gear ("Settings") in the header, admins only (members don't see it). Date format (moved here from the invoice preview), business name, address, email, payment details and default VAT rate; the next invoice number is shown, not editable. One Save button; closing with unsaved changes asks first. Desktop: a panel; phone: a full-screen page with a back arrow. No SQL. Code: `src/SettingsDialog.jsx`. Next: refunds and credit notes.
 - [ ] **Upgrade Supabase to Pro shortly before launch** (no pausing, daily backups), then delete `.github/workflows/keep-alive.yml`. Until then the workflow keeps the free project awake.
 - [ ] **Choose the hosting plan before the first paying customer.** Vercel's free Hobby plan is non-commercial only; a paid product needs Vercel Pro ($20/month per seat) or moving the app's hosting to Cloudflare (commercial use allowed free; data and sign-in stay on Supabase and Clerk). Check which Vercel plan the project is on first. See "When to consider Cloudflare".
@@ -14,7 +15,6 @@ The same list lives in the claude.ai Project ("SEQNCE / SEQUENCE v1", `claude/se
 - [ ] Idea: **more in Settings** (25 Nov, left out for now): organisation name, default currency for new projects, a "VAT ticked by default" switch, and letting admins change the next invoice number.
 - [ ] Idea: **Feedback inbox** screen just for E, instead of reading feedback in Supabase.
 - [x] **UK date format** (24 Nov 2026): one setting per organisation (UK by default, US as the option; admins change it in Settings; it was under "Your details" in the invoice preview until 25 Nov). Every date in the app, invoices and PDFs follows it (28 Nov 2026, 28/11/2026 in tight columns, 28 November 2026 on PDFs). Date pickers stay the browser's own, with the date echoed underneath in the organisation's format. Code: `src/dates.jsx`; SQL: `supabase/date-format.sql`.
-- [ ] **Refunds and credit notes (E, 22 Nov).** Issued invoices are never edited: reduce or cancel them with a credit note (CN-0001…) and its PDF. Refunds need a paid/unpaid status on invoices first. Rules to agree (credit on account, re-billing credited items, partial refunds). Money: full live test.
 - [ ] **Billing details partly filled in (E, 22 Nov).** Invoice business details and client filled in from what's already in the app (organisation name, signed-in user's email, clients used before). Rules to agree.
 - [ ] **Brand name is SQNCE** (decided 21 Nov 2026): a SEQUENCE word mark exists in classes 9/42 (Sequence HQ Ltd, billing software). The app's visible text, page title and home-screen name now say SQNCE (22 Nov). Search the UK IPO for SQNCE before filing.
 - [ ] **Redirect the old address** `project-dashboard-wczx.vercel.app` to `sqnce.co.uk` once nothing relies on it.
@@ -37,7 +37,7 @@ The same list lives in the claude.ai Project ("SEQNCE / SEQUENCE v1", `claude/se
 - [ ] **Easier task entry (E, 22 Nov).** Quick-add box (Enter adds, stays open), paste a list to add many, edit in place, due date and owner on the same line.
 - [ ] **Templates: pre-loaded tasks and costs (E, 22 Nov).** A new event starts with standard tasks and cost categories with typical items and costs in, to adjust. Rules to agree (per organisation, several templates, Quoted at £0 or typical prices).
 - [ ] **Event date + deadlines overview:** overdue tasks and unpaid costs across all projects.
-- [ ] **Client side of money:** markup or client price per item (invoices are at cost today), "billable to client" flag. Later invoice ideas: deposits, paid/unpaid status (needed for refunds).
+- [ ] **Client side of money:** markup or client price per item (invoices are at cost today), "billable to client" flag. Later invoice ideas: deposits, credit kept on account for the next invoice.
 - [ ] Smaller: attach a receipt/invoice file to a cost item.
 
 ## When to consider Cloudflare
